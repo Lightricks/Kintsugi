@@ -1,13 +1,9 @@
 name: CI
 
-on:
-  pull_request:
-  push:
-    branches:
-      - main
+on: [pull_request, push]
 
 jobs:
-  main-job:
+  build:
     name: Main
     runs-on: ubuntu-latest
 
