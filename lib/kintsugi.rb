@@ -67,8 +67,9 @@ module Kintsugi
       end
 
       Dir.chdir(File.dirname(project_file_path)) do
-        unless file_has_conflicts?(project_file_path)
-          raise "File '#{project_file_path}' doesn't have conflicts"
+        unless file_has_base_ours_and_theirs_versions?(project_file_path)
+          raise ArgumentError, "File '#{project_file_path}' doesn't have conflicts, or a 3-way " \
+            "merge is not possible."
         end
       end
     end
@@ -81,11 +82,19 @@ module Kintsugi
       Xcodeproj::Project.open(File.dirname(temp_project_file_path))
     end
 
-    def file_has_conflicts?(file_path)
-      file_absolute_path = File.absolute_path(file_path)
-      `git diff --name-only --diff-filter=U`.split("\n").any? do |conficting_file_path|
-        File.join(`git rev-parse --show-toplevel`.strip, conficting_file_path) == file_absolute_path
+    def file_has_base_ours_and_theirs_versions?(file_path)
+      Dir.chdir(`git rev-parse --show-toplevel`.strip) do
+        file_has_version_in_stage_numbers?(file_path, [1, 2, 3])
       end
+    end
+
+    def file_has_version_in_stage_numbers?(file_path, stage_numbers)
+      file_absolute_path = File.absolute_path(file_path)
+      actual_stage_numbers =
+        `git ls-files -u -- #{file_absolute_path}`.split("\n").map do |git_file_status|
+          git_file_status.split[2]
+        end
+      (stage_numbers - actual_stage_numbers.map(&:to_i)).empty?
     end
 
     def change_of_conflicting_commit_with_parent(project_file_path)
