@@ -34,7 +34,7 @@ gem 'kintsugi', require: false
 
 ## Usage
 
-When there's a `.pbxproj` file with Git conflicts, run `kintsugi <path_to_pbxproj_file>`.
+When there's a `.pbxproj` file with Git conflicts, and a 3-way merge is possible, run `kintsugi <path_to_pbxproj_file>`.
 
 And see the magic happen! :sparkles:
 
