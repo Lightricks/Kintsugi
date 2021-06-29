@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "lib/kintsugi/version"
+
 Gem::Specification.new do |spec|
   spec.name          = "kintsugi"
-  spec.version       = "0.1.0"
+  spec.version       = Kintsugi::Version::STRING
   spec.authors       = ["Ben Yohay"]
   spec.email         = ["ben@lightricks.com"]
   spec.required_ruby_version = ">= 2.5.0"

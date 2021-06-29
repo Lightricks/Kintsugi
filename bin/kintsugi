@@ -8,6 +8,8 @@ require "json"
 require "optparse"
 
 require "kintsugi"
+require_relative "../lib/kintsugi/version"
+
 
 def parse_options!(argv)
   options_parser = create_options_parser
@@ -26,12 +28,18 @@ end
 
 def create_options_parser
   OptionParser.new do |opts|
-    opts.banner = "Usage: kintsugi [pbxproj_filepath] [options]"
+    opts.banner = "Kintsugi, version #{Kintsugi::Version::STRING}\nCopyright (c) 2021 " \
+                  "Lightricks\n\nUsage: kintsugi [pbxproj_filepath] [options]"
     opts.on("--changes-output-path=PATH", "Path to which changes applied to the project are " \
             "written in JSON format. Used for debug purposes.")
 
     opts.on("-h", "--help", "Prints this help") do
       puts opts
+      exit
+    end
+
+    opts.on_tail("-v", "--version", "Prints version") do
+      puts Kintsugi::Version::STRING
       exit
     end
   end
