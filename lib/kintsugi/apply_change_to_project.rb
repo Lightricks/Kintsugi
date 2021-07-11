@@ -191,14 +191,15 @@ module Kintsugi
         (old_value || {}).reject do |key, value|
           if value != change[key]
             raise "Trying to remove value #{change[key]} of hash with key #{key} but it changed " \
-              "to #{value}."
+              "to #{value}. This is considered a conflict that should be resolved manually."
           end
 
           change.key?(key)
         end
       when String
-        if old_value != change
-          raise "Value changed from #{old_value} to #{change}."
+        if old_value != change && !old_value.nil?
+          raise "Trying to remove value #{change}, but the existing value is #{old_value}. This " \
+            "is considered a conflict that should be resolved manually."
         end
 
         nil

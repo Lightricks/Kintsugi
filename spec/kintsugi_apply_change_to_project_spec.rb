@@ -770,6 +770,25 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
+  it "removes attribute target changes from a project it was removed from already" do
+    base_project.root_object.attributes["TargetAttributes"] =
+      {"foo" => {"LastSwiftMigration" => "1140"}}
+    base_project.save
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.root_object.attributes["TargetAttributes"]["foo"] = {}
+
+    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project.root_object.attributes["TargetAttributes"]["foo"] = {}
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(ours_project, changes_to_apply)
+    ours_project.save
+
+    expect(ours_project).to be_equivalent_to_project(theirs_project)
+  end
+
   it "identifies subproject added in separate times" do
     framework_filename = "baz"
 
