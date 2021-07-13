@@ -43,9 +43,6 @@ module Kintsugi
 
       project_in_temp_directory.save
 
-      Dir.chdir(File.dirname(project_file_path)) do
-        `git reset #{project_file_path}`
-      end
       FileUtils.cp(File.join(project_in_temp_directory.path, "project.pbxproj"), project_file_path)
 
       # Some of the metadata in a `pbxproj` file include a part of the name of the directory it's
