@@ -39,28 +39,66 @@ module Kintsugi
         File.write(changes_output_path, JSON.pretty_generate(change))
       end
 
-      apply_change_to_project(project_in_temp_directory, change)
+      apply_change_and_copy_to_original_path(project_in_temp_directory, change, project_file_path)
+    end
 
-      project_in_temp_directory.save
+    # Merges the changes done between `theirs_project_path` and `base_project_path` to the file at
+    # `ours_project_path`. The files may not be at the original path, and therefore the
+    # `original_project_path` is required in order for the project metadata to be written properly.
+    #
+    # @param  [String] base_project_path
+    #         Path to the base version of the project.
+    #
+    # @param  [String] ours_project_path
+    #         Path to ours version of the project.
+    #
+    # @param  [String] theirs_project_path
+    #         Path to theirs version of the project.
+    #
+    # @param  [String] original_project_path
+    #         Path to the original path of the file.
+    #
+    # @raise [RuntimeError]
+    #        If there was an error applying the change to the project.
+    #
+    # @return [void]
+    def three_way_merge(base_project_path, ours_project_path, theirs_project_path,
+                        original_project_path)
+      original_directory_name = File.basename(File.dirname(original_project_path))
+      base_temporary_project =
+        copy_project_to_temporary_path_in_directory_with_name(base_project_path,
+                                                              original_directory_name)
+      ours_temporary_project =
+        copy_project_to_temporary_path_in_directory_with_name(ours_project_path,
+                                                              original_directory_name)
+      theirs_temporary_project =
+        copy_project_to_temporary_path_in_directory_with_name(theirs_project_path,
+                                                              original_directory_name)
 
-      FileUtils.cp(File.join(project_in_temp_directory.path, "project.pbxproj"), project_file_path)
+      change =
+        Xcodeproj::Differ.project_diff(theirs_temporary_project, base_temporary_project,
+                                       :added, :removed)
 
-      # Some of the metadata in a `pbxproj` file include a part of the name of the directory it's
-      # inside. The modified project is stored in a temporary directory and then copied to the
-      # original path, therefore its metadata is incorrect. To fix this, the project at the original
-      # path is opened and saved.
-      Xcodeproj::Project.open(File.dirname(project_file_path)).save
+      apply_change_and_copy_to_original_path(ours_temporary_project, change, ours_project_path)
     end
 
     private
 
-    def validate_project(project_file_path)
-      if File.extname(project_file_path) != ".pbxproj"
-        raise ArgumentError, "Wrong file extension, please provide file with extension .pbxproj\""
-      end
+    PROJECT_FILE_NAME = "project.pbxproj"
 
+    def apply_change_and_copy_to_original_path(project, change, original_project_file_path)
+      apply_change_to_project(project, change)
+      project.save
+      FileUtils.cp(File.join(project.path, PROJECT_FILE_NAME), original_project_file_path)
+    end
+
+    def validate_project(project_file_path)
       unless File.exist?(project_file_path)
         raise ArgumentError, "File '#{project_file_path}' doesn't exist"
+      end
+
+      if File.extname(project_file_path) != ".pbxproj"
+        raise ArgumentError, "Wrong file extension, please provide file with extension .pbxproj\""
       end
 
       Dir.chdir(File.dirname(project_file_path)) do
@@ -71,8 +109,19 @@ module Kintsugi
       end
     end
 
+    def copy_project_to_temporary_path_in_directory_with_name(project_file_path, directory_name)
+      temp_directory_name = File.join(Dir.mktmpdir, directory_name)
+      Dir.mkdir(temp_directory_name)
+      temp_project_file_path = File.join(temp_directory_name, PROJECT_FILE_NAME)
+      FileUtils.cp(project_file_path, temp_project_file_path)
+      Xcodeproj::Project.open(File.dirname(temp_project_file_path))
+    end
+
     def open_project_of_current_commit_in_temporary_directory(project_file_path)
-      temp_project_file_path = File.join(Dir.mktmpdir, "project.pbxproj")
+      project_directory_name = File.basename(File.dirname(project_file_path))
+      temp_directory_name = File.join(Dir.mktmpdir, project_directory_name)
+      Dir.mkdir(temp_directory_name)
+      temp_project_file_path = File.join(temp_directory_name, PROJECT_FILE_NAME)
       Dir.chdir(File.dirname(project_file_path)) do
         `git show HEAD:./project.pbxproj > #{temp_project_file_path}`
       end
@@ -96,11 +145,11 @@ module Kintsugi
 
     def change_of_conflicting_commit_with_parent(project_file_path)
       Dir.chdir(File.dirname(project_file_path)) do
-        conflicting_commit_project_file_path = File.join(Dir.mktmpdir, "project.pbxproj")
-        `git show :3:./project.pbxproj > #{conflicting_commit_project_file_path}`
+        conflicting_commit_project_file_path = File.join(Dir.mktmpdir, PROJECT_FILE_NAME)
+        `git show :3:./#{PROJECT_FILE_NAME} > #{conflicting_commit_project_file_path}`
 
-        conflicting_commit_parent_project_file_path = File.join(Dir.mktmpdir, "project.pbxproj")
-        `git show :1:./project.pbxproj > #{conflicting_commit_parent_project_file_path}`
+        conflicting_commit_parent_project_file_path = File.join(Dir.mktmpdir, PROJECT_FILE_NAME)
+        `git show :1:./#{PROJECT_FILE_NAME} > #{conflicting_commit_parent_project_file_path}`
 
         conflicting_commit_project = Xcodeproj::Project.open(
           File.dirname(conflicting_commit_project_file_path)
