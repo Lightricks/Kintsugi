@@ -38,6 +38,27 @@ When there's a `.pbxproj` file with Git conflicts, and a 3-way merge is possible
 
 And see the magic happen! :sparkles:
 
+### Git merge driver
+
+To use Kintsugi as a Git merge driver, follow these steps:
+
+- Add it as driver to Git config file by running the following:
+```sh
+git config merge.kintsugi.name "Kintsugi driver" # Or any other name you prefer
+git config merge.kintsugi.driver "kintsugi driver %O %A %B %P"
+```
+
+`kintsugi` should be in your `PATH`.
+Run `git config` with `--global` to add this to the global config file.
+
+- Add the following line to the `.gitattributes` file at the root of the repository:
+
+`*.pbxproj merge=kintsugi`
+
+This will instruct Git to use Kintsugi as a merge driver for `.pbxproj` files.
+
+See the [official docs](https://git-scm.com/docs/gitattributes) if you want to set this globally.
+
 ## Contribution
 
 See our [Contribution guidelines](./CONTRIBUTING.md).

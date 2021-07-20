@@ -4,49 +4,28 @@
 # Copyright (c) 2020 Lightricks. All rights reserved.
 # Created by Ben Yohay.
 
-require "json"
-require "optparse"
-
 require "kintsugi"
-require_relative "../lib/kintsugi/version"
+require_relative "../lib/kintsugi/cli"
 
-
-def parse_options!(argv)
-  options_parser = create_options_parser
-
+def parse_options!(command, argv)
   options = {}
-  options_parser.parse!(argv, into: options)
-
-  if argv.length != 1
-    puts "Incorrect number of arguments\n\n"
-    puts options_parser
-    exit(1)
-  end
-
+  command.option_parser.parse!(argv, into: options)
   options
 end
 
-def create_options_parser
-  OptionParser.new do |opts|
-    opts.banner = "Kintsugi, version #{Kintsugi::Version::STRING}\nCopyright (c) 2021 " \
-                  "Lightricks\n\nUsage: kintsugi [pbxproj_filepath] [options]"
-    opts.on("--changes-output-path=PATH", "Path to which changes applied to the project are " \
-            "written in JSON format. Used for debug purposes.")
-
-    opts.on("-h", "--help", "Prints this help") do
-      puts opts
-      exit
-    end
-
-    opts.on_tail("-v", "--version", "Prints version") do
-      puts Kintsugi::Version::STRING
-      exit
-    end
-  end
+def name_of_subcommand?(subcommands, argument)
+  subcommands.include?(argument)
 end
 
-options = parse_options!(ARGV)
-project_file_path = File.expand_path(ARGV[0])
-Kintsugi.resolve_conflicts(project_file_path, options[:"changes-output-path"])
+first_argument = ARGV[0]
+cli = Kintsugi::CLI.new
+command =
+  if name_of_subcommand?(cli.subcommands, first_argument)
+    ARGV.shift
+    cli.subcommands[first_argument]
+  else
+    cli.root_command
+  end
 
-puts "Resolved conflicts successfully"
+options = parse_options!(command, ARGV)
+command.action.call(options, ARGV, command.option_parser)
