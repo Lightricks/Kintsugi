@@ -462,7 +462,14 @@ module Kintsugi
     end
 
     def add_subproject_reference(root_object, project_reference_change)
-      subproject_reference = find_file(root_object.project, project_reference_change["ProjectRef"])
+      filter_subproject_without_project_references = lambda do |file_reference|
+        root_object.project_references.find do |project_reference|
+          project_reference.project_ref.uuid == file_reference.uuid
+        end.nil?
+      end
+      subproject_reference =
+        find_file(root_object.project, project_reference_change["ProjectRef"],
+                  file_filter: filter_subproject_without_project_references)
 
       attribute =
         Xcodeproj::Project::PBXProject.references_by_keys_attributes
@@ -565,10 +572,20 @@ module Kintsugi
       end
     end
 
-    def find_file(project, file_reference_change)
-      project.files.find do |file_reference|
-        next file_reference.path == file_reference_change["path"]
+    def find_file(project, file_reference_change, file_filter: ->(_) { true })
+      file_references = project.files.select do |file_reference|
+        file_reference.path == file_reference_change["path"] && file_filter.call(file_reference)
       end
+      if file_references.length > 1
+        puts "Debug: Found more than one matching file with path " \
+          "'#{file_reference_change["path"]}'. Using the first one."
+      elsif file_references.empty?
+        puts "Debug: No file reference found for file with path " \
+          "'#{file_reference_change["path"]}'."
+        return
+      end
+
+      file_references.first
     end
 
     def find_reference_proxy(project, container_item_proxy_change)

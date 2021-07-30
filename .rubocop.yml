@@ -6,6 +6,9 @@ RSpec/ExampleLength:
 RSpec/DescribeClass:
   Enabled: false
 
+RSpec/MultipleExpectations:
+  Enabled: false
+
 AllCops:
   DisplayCopNames: true
   TargetRubyVersion: 2.5

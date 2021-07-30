@@ -62,6 +62,26 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
   end
 
+  it "adds subproject that already exists" do
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+    subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
+    theirs_project.save
+
+    ours_project = create_copy_of_project(base_project.path, "ours")
+    add_existing_subproject_to_project(ours_project, subproject, "foo")
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(ours_project, changes_to_apply)
+    ours_project.save
+
+    expect(ours_project.root_object.project_references[0][:project_ref].uuid)
+      .not_to equal(ours_project.root_object.project_references[1][:project_ref].uuid)
+    expect(ours_project.root_object.project_references[0][:project_ref].proxy_containers).not_to be_empty
+    expect(ours_project.root_object.project_references[1][:project_ref].proxy_containers).not_to be_empty
+  end
+
   # Checks that the order the changes are applied in is correct.
   it "adds new subproject and reference to its framework" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
@@ -801,7 +821,7 @@ describe Kintsugi, :apply_change_to_project do
     expect(ours_project).to be_equivalent_to_project(theirs_project)
   end
 
-  it "identifies subproject added in separate times" do
+  it "identifies subproject added at separate times when adding a product to the subproject" do
     framework_filename = "baz"
 
     subproject = new_subproject("subproj", framework_filename)
@@ -882,10 +902,10 @@ describe Kintsugi, :apply_change_to_project do
       file_reference.path == subproject_product_name
     end.remove_from_project
 
-    project.root_object.project_references[0][:product_group] =
+    project.root_object.project_references[-1][:product_group] =
       project.new(Xcodeproj::Project::PBXGroup)
-    project.root_object.project_references[0][:product_group].name = "Products"
-    project.root_object.project_references[0][:product_group] <<
+    project.root_object.project_references[-1][:product_group].name = "Products"
+    project.root_object.project_references[-1][:product_group] <<
       create_reference_proxy_from_product_reference(project, subproject_reference,
                                                     subproject.products_group.files[0])
   end
