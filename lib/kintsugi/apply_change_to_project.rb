@@ -309,7 +309,8 @@ module Kintsugi
     def add_reference_proxy(containing_component, change)
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
-        containing_component.file_ref = find_file(containing_component.project, change)
+        containing_component.file_ref = find_reference_proxy(containing_component.project,
+                                                             change["remoteRef"])
       when Xcodeproj::Project::PBXGroup
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
@@ -565,15 +566,8 @@ module Kintsugi
     end
 
     def find_file(project, file_reference_change)
-      case file_reference_change["isa"]
-      when "PBXFileReference"
-        project.files.find do |file_reference|
-          next file_reference.path == file_reference_change["path"]
-        end
-      when "PBXReferenceProxy"
-        find_reference_proxy(project, file_reference_change["remoteRef"])
-      else
-        raise "Unsupported file reference change of type #{file_reference["isa"]}."
+      project.files.find do |file_reference|
+        next file_reference.path == file_reference_change["path"]
       end
     end
 
