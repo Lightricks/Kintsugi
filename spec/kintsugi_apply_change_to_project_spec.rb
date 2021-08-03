@@ -449,6 +449,30 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
 
+    it "adds build file to a file reference that already exist" do
+      file_reference = base_project.main_group.new_reference("bar")
+      base_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+
+      base_project.main_group.new_reference("bar")
+
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      theirs_file_reference = theirs_project.main_group.files.find do |file|
+        !file.referrers.find { |referrer| referrer.is_a?(Xcodeproj::Project::PBXBuildFile) } &&
+          file.display_name == "bar"
+      end
+      theirs_project.targets[0].frameworks_build_phase.add_file_reference(theirs_file_reference)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "adds file reference to build file" do
       file_reference = base_project.main_group.new_reference("bar")
 

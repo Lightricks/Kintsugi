@@ -309,8 +309,22 @@ module Kintsugi
     def add_reference_proxy(containing_component, change)
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
-        containing_component.file_ref = find_reference_proxy(containing_component.project,
-                                                             change["remoteRef"])
+        # If there are two file references that refer to the same file, one with a build file and
+        # the other one without, this method will prefer to take the one without the build file.
+        # This assumes that it's preferred to have a file reference with build file than a file
+        # reference without/with two build files.
+        filter_references_without_build_files = lambda do |reference|
+          reference.referrers.find do |referrer|
+            referrer.is_a?(Xcodeproj::Project::PBXBuildFile)
+          end.nil?
+        end
+        file_reference =
+          find_reference_proxy(containing_component.project, change["remoteRef"],
+                               reference_filter: filter_references_without_build_files)
+        if file_reference.nil?
+          file_reference = find_reference_proxy(containing_component.project, change["remoteRef"])
+        end
+        containing_component.file_ref = file_reference
       when Xcodeproj::Project::PBXGroup
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
@@ -588,12 +602,13 @@ module Kintsugi
       file_references.first
     end
 
-    def find_reference_proxy(project, container_item_proxy_change)
+    def find_reference_proxy(project, container_item_proxy_change, reference_filter: ->(_) { true })
       reference_proxies = project.root_object.project_references.map do |project_ref_and_products|
         project_ref_and_products[:product_group].children.find do |product|
           product.remote_ref.remote_global_id_string ==
             container_item_proxy_change["remoteGlobalIDString"] &&
-            product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"]
+            product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"] &&
+            reference_filter.call(product)
         end
       end.compact
 
