@@ -2,6 +2,7 @@
 # Created by Ben Yohay.
 # frozen_string_literal: true
 
+require "json"
 require "tmpdir"
 require "tempfile"
 require "xcodeproj"
@@ -16,7 +17,7 @@ module Kintsugi
     # @param  [String] project_file_path
     #         Project to which to apply the changes.
     #
-    # @param  [String] output_changes_path
+    # @param  [String] changes_output_path
     #         Path to where the changes to apply to the project are written in JSON format.
     #
     # @raise [ArgumentError]
