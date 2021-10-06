@@ -38,6 +38,18 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
+  it "adds new aggregate target" do
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.new_aggregate_target("foo")
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+    base_project.save
+
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
   it "adds new subproject" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
     add_new_subproject_to_project(theirs_project, "foo", "foo")

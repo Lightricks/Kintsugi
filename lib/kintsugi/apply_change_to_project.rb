@@ -266,6 +266,8 @@ module Kintsugi
       case change["isa"]
       when "PBXNativeTarget"
         add_target(component, change)
+      when "PBXAggregateTarget"
+        add_aggregate_target(component, change)
       when "PBXFileReference"
         add_file_reference(component, change)
       when "PBXGroup"
@@ -485,6 +487,12 @@ module Kintsugi
 
     def add_target(root_object, change)
       target = root_object.project.new(Xcodeproj::Project::PBXNativeTarget)
+      root_object.project.targets << target
+      add_attributes_to_component(target, change)
+    end
+
+    def add_aggregate_target(root_object, change)
+      target = root_object.project.new(Xcodeproj::Project::PBXAggregateTarget)
       root_object.project.targets << target
       add_attributes_to_component(target, change)
     end
