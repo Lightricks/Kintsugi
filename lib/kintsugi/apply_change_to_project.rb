@@ -309,7 +309,22 @@ module Kintsugi
     def add_reference_proxy(containing_component, change)
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
-        containing_component.file_ref = find_file(containing_component.project, change)
+        # If there are two file references that refer to the same file, one with a build file and
+        # the other one without, this method will prefer to take the one without the build file.
+        # This assumes that it's preferred to have a file reference with build file than a file
+        # reference without/with two build files.
+        filter_references_without_build_files = lambda do |reference|
+          reference.referrers.find do |referrer|
+            referrer.is_a?(Xcodeproj::Project::PBXBuildFile)
+          end.nil?
+        end
+        file_reference =
+          find_reference_proxy(containing_component.project, change["remoteRef"],
+                               reference_filter: filter_references_without_build_files)
+        if file_reference.nil?
+          file_reference = find_reference_proxy(containing_component.project, change["remoteRef"])
+        end
+        containing_component.file_ref = file_reference
       when Xcodeproj::Project::PBXGroup
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
@@ -461,7 +476,14 @@ module Kintsugi
     end
 
     def add_subproject_reference(root_object, project_reference_change)
-      subproject_reference = find_file(root_object.project, project_reference_change["ProjectRef"])
+      filter_subproject_without_project_references = lambda do |file_reference|
+        root_object.project_references.find do |project_reference|
+          project_reference.project_ref.uuid == file_reference.uuid
+        end.nil?
+      end
+      subproject_reference =
+        find_file(root_object.project, project_reference_change["ProjectRef"],
+                  file_filter: filter_subproject_without_project_references)
 
       attribute =
         Xcodeproj::Project::PBXProject.references_by_keys_attributes
@@ -564,25 +586,29 @@ module Kintsugi
       end
     end
 
-    def find_file(project, file_reference_change)
-      case file_reference_change["isa"]
-      when "PBXFileReference"
-        project.files.find do |file_reference|
-          next file_reference.path == file_reference_change["path"]
-        end
-      when "PBXReferenceProxy"
-        find_reference_proxy(project, file_reference_change["remoteRef"])
-      else
-        raise "Unsupported file reference change of type #{file_reference["isa"]}."
+    def find_file(project, file_reference_change, file_filter: ->(_) { true })
+      file_references = project.files.select do |file_reference|
+        file_reference.path == file_reference_change["path"] && file_filter.call(file_reference)
       end
+      if file_references.length > 1
+        puts "Debug: Found more than one matching file with path " \
+          "'#{file_reference_change["path"]}'. Using the first one."
+      elsif file_references.empty?
+        puts "Debug: No file reference found for file with path " \
+          "'#{file_reference_change["path"]}'."
+        return
+      end
+
+      file_references.first
     end
 
-    def find_reference_proxy(project, container_item_proxy_change)
+    def find_reference_proxy(project, container_item_proxy_change, reference_filter: ->(_) { true })
       reference_proxies = project.root_object.project_references.map do |project_ref_and_products|
         project_ref_and_products[:product_group].children.find do |product|
           product.remote_ref.remote_global_id_string ==
             container_item_proxy_change["remoteGlobalIDString"] &&
-            product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"]
+            product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"] &&
+            reference_filter.call(product)
         end
       end.compact
 
