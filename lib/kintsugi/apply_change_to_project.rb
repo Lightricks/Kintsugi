@@ -167,7 +167,7 @@ module Kintsugi
       new_value = nil
 
       if change.key?(:removed)
-        new_value = apply_removal_to_simple_attribute(old_value, change[:removed])
+        new_value = apply_removal_to_simple_attribute(old_value, change[:removed], change[:added])
       end
 
       if change.key?(:added)
@@ -183,30 +183,31 @@ module Kintsugi
       new_value
     end
 
-    def apply_removal_to_simple_attribute(old_value, change)
-      case change
+    def apply_removal_to_simple_attribute(old_value, removed_change, added_change)
+      case removed_change
       when Array
-        (old_value || []) - change
+        (old_value || []) - removed_change
       when Hash
         (old_value || {}).reject do |key, value|
-          if value != change[key]
-            raise "Trying to remove value #{change[key]} of hash with key #{key} but it changed " \
-              "to #{value}. This is considered a conflict that should be resolved manually."
+          if value != removed_change[key] && added_change[key] != value
+            raise "Trying to remove value '#{removed_change[key]}' of hash with key '#{key}' but " \
+              "it changed to #{value}. This is considered a conflict that should be resolved " \
+              "manually."
           end
 
-          change.key?(key)
+          removed_change.key?(key)
         end
       when String
-        if old_value != change && !old_value.nil?
-          raise "Trying to remove value #{change}, but the existing value is #{old_value}. This " \
-            "is considered a conflict that should be resolved manually."
+        if old_value != removed_change && !old_value.nil? && added_change != old_value
+          raise "Trying to remove value '#{removed_change}', but the existing value is " \
+            "'#{old_value}'. This is considered a conflict that should be resolved manually."
         end
 
         nil
       when nil
         nil
       else
-        raise "Unsupported change #{change} of type #{change.class}"
+        raise "Unsupported change #{removed_change} of type #{removed_change.class}"
       end
     end
 

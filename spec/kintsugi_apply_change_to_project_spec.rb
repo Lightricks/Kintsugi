@@ -176,6 +176,23 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "changes simple attribute of a file that has a build file" do
+      target = base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
+      file_reference = base_project.main_group.find_file_by_path(filepath)
+      target.frameworks_build_phase.add_file_reference(file_reference)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      file_reference = theirs_project.main_group.find_file_by_path(filepath)
+      file_reference.include_in_index = "4"
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "removes build files of a removed file" do
       target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
       target.source_build_phase.add_file_reference(
@@ -836,6 +853,24 @@ describe Kintsugi, :apply_change_to_project do
 
     ours_project = create_copy_of_project(base_project.path, "ours")
     ours_project.root_object.attributes["TargetAttributes"]["foo"] = {}
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(ours_project, changes_to_apply)
+    ours_project.save
+
+    expect(ours_project).to be_equivalent_to_project(theirs_project)
+  end
+
+  it "doesn't throw if existing attribute target change is same as added change" do
+    base_project.root_object.attributes["TargetAttributes"] = {"foo" => "1140"}
+    base_project.save
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.root_object.attributes["TargetAttributes"]["foo"] = "1111"
+
+    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project.root_object.attributes["TargetAttributes"]["foo"] = "1111"
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
