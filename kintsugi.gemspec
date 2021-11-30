@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
   spec.test_files    = spec.files.grep(%r{^(spec)/})
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "xcodeproj", "1.19.0"
+  spec.add_dependency "xcodeproj", ">= 1.19.0", "<= 1.21.0"
 
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rspec", "~> 3.9"
