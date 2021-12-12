@@ -12,12 +12,14 @@ module Kintsugi
     # Subcommands of Kintsugi CLI.
     attr_reader :subcommands
 
-    # Root command Kintsugi CLI.
+    # Root command of Kintsugi CLI.
     attr_reader :root_command
 
     def initialize
       @subcommands = {
-        "driver" => create_driver_subcommand
+        "driver" => create_driver_subcommand,
+        "install-driver" => create_install_driver_subcommand,
+        "uninstall-driver" => create_uninstall_driver_subcommand
       }.freeze
       @root_command = create_root_command
     end
@@ -54,6 +56,102 @@ module Kintsugi
         action: driver_action,
         description: "3-way merge compatible with Git merge driver"
       )
+    end
+
+    def create_install_driver_subcommand
+      option_parser =
+        OptionParser.new do |opts|
+          opts.banner = "Usage: kintsugi install-driver\n" \
+            "Installs Kintsugi as a Git merge driver globally. "
+
+          opts.on("-h", "--help", "Prints this help") do
+            puts opts
+            exit
+          end
+        end
+
+      action = lambda { |_, arguments, _|
+        if arguments.count != 0
+          puts "Incorrect number of arguments to 'install-driver' subcommand\n\n"
+          puts option_parser
+          exit(1)
+        end
+
+        if `which kintsugi`.chomp.empty?
+          puts "Can only install Kintsugi globally if Kintsugi is in your PATH"
+          exit(1)
+        end
+
+        install_kintsugi_driver_globally
+        puts "Done! 🪄"
+      }
+
+      Command.new(
+        option_parser: option_parser,
+        action: action,
+        description: "Installs Kintsugi as a Git merge driver globally"
+      )
+    end
+
+    def install_kintsugi_driver_globally
+      `git config --global merge.kintsugi.name "Kintsugi driver"`
+      `git config --global merge.kintsugi.driver "kintsugi driver %O %A %B %P"`
+
+      attributes_file_path = global_attributes_file_path
+      merge_using_kintsugi_line = "'*.pbxproj merge=kintsugi'"
+      `grep -sqxF #{merge_using_kintsugi_line} "#{attributes_file_path}" \
+        || echo #{merge_using_kintsugi_line} >> "#{attributes_file_path}"`
+    end
+
+    def global_attributes_file_path
+      # The logic to decide the path to the global attributes file is described at:
+      # https://git-scm.com/docs/gitattributes.
+      config_attributes_file_path = `git config --global core.attributesfile`
+      return config_attributes_file_path unless config_attributes_file_path.empty?
+
+      if ENV["XDG_CONFIG_HOME"].nil? || ENV["XDG_CONFIG_HOME"].empty?
+        File.join(ENV["HOME"], ".config/git/attributes")
+      else
+        File.join(ENV["XDG_CONFIG_HOME"], "git/attributes")
+      end
+    end
+
+    def create_uninstall_driver_subcommand
+      option_parser =
+        OptionParser.new do |opts|
+          opts.banner = "Usage: kintsugi uninstall-driver\n" \
+            "Uninstalls Kintsugi as a Git merge driver that was previously installed globally."
+
+          opts.on("-h", "--help", "Prints this help") do
+            puts opts
+            exit
+          end
+        end
+
+      action = lambda { |_, arguments, _|
+        if arguments.count != 0
+          puts "Incorrect number of arguments to 'uninstall-driver' subcommand\n\n"
+          puts option_parser
+          exit(1)
+        end
+
+        uninstall_kintsugi_driver_globally
+        puts "Done!"
+      }
+
+      Command.new(
+        option_parser: option_parser,
+        action: action,
+        description: "Uninstalls Kintsugi as a Git merge driver that was previously installed " \
+                     "globally."
+      )
+    end
+
+    def uninstall_kintsugi_driver_globally
+      `git config --global --unset merge.kintsugi.name`
+      `git config --global --unset merge.kintsugi.driver`
+
+      `sed -i '' '/\*.pbxproj\ merge=kintsugi/d' "#{global_attributes_file_path}"`
     end
 
     def create_root_command
