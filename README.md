@@ -40,15 +40,22 @@ And see the magic happen! :sparkles:
 
 ### Git merge driver
 
-To use Kintsugi as a Git merge driver, follow these steps:
+You can setup Kintsugi to automatically resolve conflicts that occur in `pbxproj` files when such conflicts occur.
 
-- Add it as driver to Git config file by running the following:
+#### Automatic install
+
+Run `kintsugi install-driver`. This will install Kintsugi as a merge driver globally. Note that Kintsugi needs to be in your `PATH`.
+
+❗ Do not install with bundler because the installation might succeed even if Kintsugi is not in `PATH`.
+
+#### Manual install
+
+- Add Kintsugi as driver to Git config file by running the following:
 ```sh
 git config merge.kintsugi.name "Kintsugi driver" # Or any other name you prefer
-git config merge.kintsugi.driver "kintsugi driver %O %A %B %P"
+git config merge.kintsugi.driver "<path_to_kintsugi> driver %O %A %B %P"
 ```
 
-`kintsugi` should be in your `PATH`.
 Run `git config` with `--global` to add this to the global config file.
 
 - Add the following line to the `.gitattributes` file at the root of the repository:
