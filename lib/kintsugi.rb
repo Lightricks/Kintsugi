@@ -9,6 +9,7 @@ require "xcodeproj"
 
 require_relative "kintsugi/xcodeproj_extensions"
 require_relative "kintsugi/apply_change_to_project"
+require_relative "kintsugi/error"
 
 module Kintsugi
   class << self
@@ -21,11 +22,11 @@ module Kintsugi
     #         Path to where the changes to apply to the project are written in JSON format.
     #
     # @raise [ArgumentError]
-    #        If the file extension is not `pbxproj` or the file doesn't exist
+    #        If the file extension is not `pbxproj`, or the file doesn't exist, or if no rebase,
+    #        cherry-pick, or merge is in progress
     #
-    # @raise [RuntimeError]
-    #        If no rebase, cherry-pick, or merge is in progress, or the project file couldn't be
-    #        opened, or there was an error applying the change to the project.
+    # @raise [MergeError]
+    #        If there was an error applying the change to the project.
     #
     # @return [void]
     def resolve_conflicts(project_file_path, changes_output_path)
@@ -59,7 +60,7 @@ module Kintsugi
     # @param  [String] original_project_path
     #         Path to the original path of the file.
     #
-    # @raise [RuntimeError]
+    # @raise [MergeError]
     #        If there was an error applying the change to the project.
     #
     # @return [void]
@@ -104,8 +105,8 @@ module Kintsugi
 
       Dir.chdir(File.dirname(project_file_path)) do
         unless file_has_base_ours_and_theirs_versions?(project_file_path)
-          raise ArgumentError, "File '#{project_file_path}' doesn't have conflicts, or a 3-way " \
-            "merge is not possible."
+          raise ArgumentError, "File '#{project_file_path}' doesn't have conflicts, " \
+            "or a 3-way merge is not possible."
         end
       end
     end

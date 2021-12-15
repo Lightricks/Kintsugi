@@ -190,24 +190,24 @@ module Kintsugi
       when Hash
         (old_value || {}).reject do |key, value|
           if value != removed_change[key] && added_change[key] != value
-            raise "Trying to remove value '#{removed_change[key]}' of hash with key '#{key}' but " \
-              "it changed to #{value}. This is considered a conflict that should be resolved " \
-              "manually."
+            raise MergeError, "Trying to remove value '#{removed_change[key]}' of hash with key " \
+              "'#{key}' but it changed to #{value}. This is considered a conflict that should be " \
+              "resolved manually."
           end
 
           removed_change.key?(key)
         end
       when String
         if old_value != removed_change && !old_value.nil? && added_change != old_value
-          raise "Trying to remove value '#{removed_change}', but the existing value is " \
-            "'#{old_value}'. This is considered a conflict that should be resolved manually."
+          raise MergeError, "Trying to remove value '#{removed_change}', but the existing value " \
+            "is '#{old_value}'. This is considered a conflict that should be resolved manually."
         end
 
         nil
       when nil
         nil
       else
-        raise "Unsupported change #{removed_change} of type #{removed_change.class}"
+        raise MergeError, "Unsupported change #{removed_change} of type #{removed_change.class}"
       end
     end
 
@@ -220,7 +220,8 @@ module Kintsugi
         new_value = old_value.merge(change)
 
         unless (old_value.to_a - new_value.to_a).empty?
-          raise "New hash #{change} contains values that conflict with old hash #{old_value}"
+          raise MergeError, "New hash #{change} contains values that conflict with old hash " \
+            "#{old_value}"
         end
 
         new_value
@@ -229,14 +230,15 @@ module Kintsugi
       when nil
         nil
       else
-        raise "Unsupported change #{change} of type #{change.class}"
+        raise MergeError, "Unsupported change #{change} of type #{change.class}"
       end
     end
 
     def remove_component(component, change)
       if component.to_tree_hash != change
-        raise "Trying to remove an object that changed since then. This is considered a conflict " \
-          "that should be resolved manually. Name of the object is: '#{component.display_name}'"
+        raise MergeError, "Trying to remove an object that changed since then. This is " \
+          "considered a conflict that should be resolved manually. Name of the object is: " \
+          "'#{component.display_name}'"
       end
 
       if change["isa"] == "PBXFileReference"
@@ -302,8 +304,8 @@ module Kintsugi
       when "PBXReferenceProxy"
         add_reference_proxy(component, change)
       else
-        raise "Trying to add unsupported component type #{change["isa"]}. Full component change " \
-          "is: #{change}"
+        raise MergeError, "Trying to add unsupported component type #{change["isa"]}. Full " \
+          "component change is: #{change}"
       end
     end
 
@@ -331,7 +333,7 @@ module Kintsugi
         containing_component << reference_proxy
         add_attributes_to_component(reference_proxy, change)
       else
-        raise "Trying to add reference proxy to an unsupported component type " \
+        raise MergeError, "Trying to add reference proxy to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
@@ -346,7 +348,7 @@ module Kintsugi
         containing_component.children << variant_group
         add_attributes_to_component(variant_group, change)
       else
-        raise "Trying to add variant group to an unsupported component type " \
+        raise MergeError, "Trying to add variant group to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
@@ -442,7 +444,7 @@ module Kintsugi
       when "PBXReferenceProxy"
         component.remote_ref = container_proxy
       else
-        raise "Trying to add container item proxy to an unsupported component type " \
+        raise MergeError, "Trying to add container item proxy to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
       add_attributes_to_component(container_proxy, change, ignore_keys: ["containerPortal"])
@@ -541,7 +543,7 @@ module Kintsugi
         file_reference.include_in_index = nil
         add_attributes_to_component(file_reference, change)
       else
-        raise "Trying to add file reference to an unsupported component type " \
+        raise MergeError, "Trying to add file reference to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
@@ -556,8 +558,8 @@ module Kintsugi
         new_group = containing_component.project.new(Xcodeproj::Project::PBXGroup)
         containing_component.children << new_group
       else
-        raise "Trying to add group to an unsupported component type #{containing_component.isa}. " \
-          "Change is: #{change}"
+        raise MergeError, "Trying to add group to an unsupported component type " \
+          "#{containing_component.isa}. Change is: #{change}"
       end
 
       add_attributes_to_component(new_group, change)
@@ -581,8 +583,8 @@ module Kintsugi
             add_child_to_component(component, added_attribute_element)
           end
         else
-          raise "Trying to add attribute of unsupported type '#{change_value.class}' to " \
-            "object #{component}. Attribute name is '#{change_name}'"
+          raise MergeError, "Trying to add attribute of unsupported type '#{change_value.class}' " \
+            "to object #{component}. Attribute name is '#{change_name}'"
         end
       end
     end
