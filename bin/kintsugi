@@ -28,4 +28,4 @@ command =
   end
 
 options = parse_options!(command, ARGV)
-command.action.call(options, ARGV, command.option_parser)
+command.action.call(options, ARGV)

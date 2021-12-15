@@ -29,7 +29,7 @@ module Kintsugi
     Command = Struct.new(:option_parser, :action, :description, keyword_init: true)
 
     def create_driver_subcommand
-      driver_option_parser =
+      option_parser =
         OptionParser.new do |opts|
           opts.banner = "Usage: kintsugi driver BASE OURS THEIRS ORIGINAL_FILE_PATH\n" \
             "Uses Kintsugi as a Git merge driver. Parameters " \
@@ -42,7 +42,7 @@ module Kintsugi
           end
         end
 
-      driver_action = lambda { |_, arguments, option_parser|
+      driver_action = lambda { |_, arguments|
         if arguments.count != 4
           puts "Incorrect number of arguments to 'driver' subcommand\n\n"
           puts option_parser
@@ -52,7 +52,7 @@ module Kintsugi
       }
 
       Command.new(
-        option_parser: driver_option_parser,
+        option_parser: option_parser,
         action: driver_action,
         description: "3-way merge compatible with Git merge driver"
       )
@@ -70,7 +70,7 @@ module Kintsugi
           end
         end
 
-      action = lambda { |_, arguments, _|
+      action = lambda { |_, arguments|
         if arguments.count != 0
           puts "Incorrect number of arguments to 'install-driver' subcommand\n\n"
           puts option_parser
@@ -155,7 +155,7 @@ module Kintsugi
     end
 
     def create_root_command
-      root_option_parser = OptionParser.new do |opts|
+      option_parser = OptionParser.new do |opts|
         opts.banner = "Kintsugi, version #{Version::STRING}\n" \
                       "Copyright (c) 2021 Lightricks\n\n" \
                       "Usage: kintsugi <pbxproj_filepath> [options]\n" \
@@ -181,7 +181,7 @@ module Kintsugi
         opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions}")
       end
 
-      root_action = lambda { |options, arguments, option_parser|
+      root_action = lambda { |options, arguments|
         if arguments.count != 1
           puts "Incorrect number of arguments\n\n"
           puts option_parser
@@ -194,7 +194,7 @@ module Kintsugi
       }
 
       Command.new(
-        option_parser: root_option_parser,
+        option_parser: option_parser,
         action: root_action,
         description: nil
       )
