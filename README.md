@@ -65,7 +65,11 @@ See our [Contribution guidelines](./CONTRIBUTING.md).
 
 ## Alternatives
 
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen): You can commit this JSON file into Git instead of the `.pbxproj` file. Then resolving conflicts is much easier.
+All of the alternatives below allow you to generate your Xcode projects based on a spec or manifest. You commit these files to git, and can even remove the `.xcodeproj` files from git.
+
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+- [Tuist](https://github.com/tuist)
+- [Xcake](https://github.com/igor-makarov/xcake)
 
 ## Copyright
 
