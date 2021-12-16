@@ -6,6 +6,7 @@
 
 require "kintsugi"
 require_relative "../lib/kintsugi/cli"
+require_relative "../lib/kintsugi/error"
 
 def parse_options!(command, argv)
   options = {}
@@ -28,4 +29,11 @@ command =
   end
 
 options = parse_options!(command, ARGV)
-command.action.call(options, ARGV)
+
+begin
+  command.action.call(options, ARGV)
+rescue ArgumentError => e
+  puts "#{e.class}: #{e}"
+rescue Kintsugi::MergeError => e
+  puts e
+end
