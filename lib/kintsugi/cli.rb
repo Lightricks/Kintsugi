@@ -2,6 +2,7 @@
 # Created by Ben Yohay.
 # frozen_string_literal: true
 
+require "fileutils"
 require "optparse"
 
 require_relative "version"
@@ -98,6 +99,8 @@ module Kintsugi
       `git config --global merge.kintsugi.driver "kintsugi driver %O %A %B %P"`
 
       attributes_file_path = global_attributes_file_path
+      FileUtils.mkdir_p(File.dirname(attributes_file_path))
+
       merge_using_kintsugi_line = "'*.pbxproj merge=kintsugi'"
       `grep -sqxF #{merge_using_kintsugi_line} "#{attributes_file_path}" \
         || echo #{merge_using_kintsugi_line} >> "#{attributes_file_path}"`
