@@ -128,7 +128,7 @@ module Kintsugi
           end
         end
 
-      action = lambda { |_, arguments, _|
+      action = lambda { |_, arguments|
         if arguments.count != 0
           puts "Incorrect number of arguments to 'uninstall-driver' subcommand\n\n"
           puts option_parser
