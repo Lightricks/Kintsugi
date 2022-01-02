@@ -154,7 +154,10 @@ module Kintsugi
       `git config --global --unset merge.kintsugi.name`
       `git config --global --unset merge.kintsugi.driver`
 
-      `sed -i '' '/\*.pbxproj\ merge=kintsugi/d' "#{global_attributes_file_path}"`
+      attributes_file_path = global_attributes_file_path
+      return unless File.exist?(attributes_file_path)
+
+      `sed -i '' '/\*.pbxproj\ merge=kintsugi/d' "#{attributes_file_path}"`
     end
 
     def create_root_command
