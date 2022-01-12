@@ -139,7 +139,7 @@ module Kintsugi
     def file_has_version_in_stage_numbers?(file_path, stage_numbers)
       file_absolute_path = File.absolute_path(file_path)
       actual_stage_numbers =
-        `git ls-files -u -- #{file_absolute_path}`.split("\n").map do |git_file_status|
+        `git ls-files -u -- "#{file_absolute_path}"`.split("\n").map do |git_file_status|
           git_file_status.split[2]
         end
       (stage_numbers - actual_stage_numbers.map(&:to_i)).empty?
