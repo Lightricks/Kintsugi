@@ -181,10 +181,7 @@ module Kintsugi
           exit
         end
 
-        subcommands_descriptions = @subcommands.map do |command_name, command|
-          "    #{command_name}:    #{command.description}"
-        end.join("\n")
-        opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions}")
+        opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
       end
 
       root_action = lambda { |options, arguments|
@@ -204,6 +201,14 @@ module Kintsugi
         action: root_action,
         description: nil
       )
+    end
+
+    def subcommands_descriptions(subcommands)
+      longest_subcommand_length = subcommands.keys.map(&:length).max + 4
+      format_string = "    %-#{longest_subcommand_length}s%s"
+      subcommands.map do |command_name, command|
+        format(format_string, "#{command_name}:", command.description)
+      end.join("\n")
     end
   end
 end
