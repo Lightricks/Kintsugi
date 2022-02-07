@@ -125,7 +125,7 @@ module Kintsugi
       Dir.mkdir(temp_directory_name)
       temp_project_file_path = File.join(temp_directory_name, PROJECT_FILE_NAME)
       Dir.chdir(File.dirname(project_file_path)) do
-        `git show HEAD:./project.pbxproj > #{temp_project_file_path}`
+        `git show HEAD:./project.pbxproj > "#{temp_project_file_path}"`
       end
       Xcodeproj::Project.open(File.dirname(temp_project_file_path))
     end
