@@ -186,6 +186,9 @@ module Kintsugi
     def apply_removal_to_simple_attribute(old_value, removed_change, added_change)
       case removed_change
       when Array
+        if old_value.is_a?(String)
+          old_value = [old_value]
+        end
         (old_value || []) - removed_change
       when Hash
         (old_value || {}).reject do |key, value|
@@ -214,6 +217,9 @@ module Kintsugi
     def apply_addition_to_simple_attribute(old_value, change)
       case change
       when Array
+        if old_value.is_a?(String)
+          old_value = [old_value]
+        end
         (old_value || []) + change
       when Hash
         old_value ||= {}

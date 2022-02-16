@@ -622,6 +622,48 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "adds build setting value when existing build setting is string and added value is array" do
+      base_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+      end
+
+      base_project.save
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      theirs_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
+      end
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "removes build setting if existing build setting is string and removed value is array" do
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      base_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+      end
+      base_project.save
+
+      before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+      before_theirs_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = ["bar"]
+      end
+
+      changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+
     it "adds build phases" do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
