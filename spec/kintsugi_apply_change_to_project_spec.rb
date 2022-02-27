@@ -50,6 +50,20 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
+  it "adds package reference" do
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+    theirs_project.root_object.package_references <<
+      create_remote_swift_package_reference(theirs_project)
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+    base_project.save
+
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
   it "adds new subproject" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
     add_new_subproject_to_project(theirs_project, "foo", "foo")
@@ -370,6 +384,19 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "adds package product dependency to target" do
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.targets[0].package_product_dependencies <<
+        create_swift_package_product_dependency(theirs_project)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "changes framework from reference proxy to file reference" do
       framework_filename = "baz"
 
@@ -457,6 +484,26 @@ describe Kintsugi, :apply_change_to_project do
 
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
+    end
+
+    it "adds product ref to build file" do
+      base_project.main_group.new_reference("bar")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
+      build_file =
+        theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+      build_file.product_ref =
+        create_swift_package_product_dependency(theirs_project)
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
@@ -985,6 +1032,22 @@ describe Kintsugi, :apply_change_to_project do
     reference_proxy.source_tree = 'BUILT_PRODUCTS_DIR'
 
     reference_proxy
+  end
+
+  def create_swift_package_product_dependency(project)
+    product_dependency = project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+    product_dependency.product_name = "foo"
+    product_dependency.package = create_remote_swift_package_reference(project)
+
+    product_dependency
+  end
+
+  def create_remote_swift_package_reference(project)
+    package_reference = project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+    package_reference.repositoryURL = "http://foo"
+    package_reference.requirement = {"foo" => "bar"}
+
+    package_reference
   end
 
   def make_temp_directory(directory_prefix, directory_extension)

@@ -92,7 +92,7 @@ module Kintsugi
     end
 
     def attribute_name_from_change_name(change_name)
-      if change_name == "fileEncoding"
+      if %w[fileEncoding repositoryURL].include?(change_name)
         change_name.to_sym
       else
         Xcodeproj::Project::Object::CaseConverter.convert_to_ruby(change_name)
@@ -303,9 +303,45 @@ module Kintsugi
         add_variant_group(component, change)
       when "PBXReferenceProxy"
         add_reference_proxy(component, change)
+      when "XCSwiftPackageProductDependency"
+        add_swift_package_product_dependency(component, change)
+      when "XCRemoteSwiftPackageReference"
+        add_remote_swift_package_reference(component, change)
       else
         raise MergeError, "Trying to add unsupported component type #{change["isa"]}. Full " \
           "component change is: #{change}"
+      end
+    end
+
+    def add_remote_swift_package_reference(containing_component, change)
+      remote_swift_package_reference =
+        containing_component.project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+      add_attributes_to_component(remote_swift_package_reference, change)
+
+      case containing_component
+      when Xcodeproj::Project::XCSwiftPackageProductDependency
+        containing_component.package = remote_swift_package_reference
+      when Xcodeproj::Project::PBXProject
+        containing_component.package_references << remote_swift_package_reference
+      else
+        raise MergeError, "Trying to add remote swift package reference to an unsupported " \
+          "component type #{containing_component.isa}. Change is: #{change}"
+      end
+    end
+
+    def add_swift_package_product_dependency(containing_component, change)
+      swift_package_product_dependency =
+        containing_component.project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+      add_attributes_to_component(swift_package_product_dependency, change)
+
+      case containing_component
+      when Xcodeproj::Project::PBXBuildFile
+        containing_component.product_ref = swift_package_product_dependency
+      when Xcodeproj::Project::PBXNativeTarget
+        containing_component.package_product_dependencies << swift_package_product_dependency
+      else
+        raise MergeError, "Trying to add swift package product dependency to an unsupported " \
+          "component type #{containing_component.isa}. Change is: #{change}"
       end
     end
 
