@@ -467,8 +467,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds build file to a file reference that already exist" do
-      file_reference = base_project.main_group.new_reference("bar")
-      base_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+      base_project.main_group.new_reference("bar")
 
       base_project.main_group.new_reference("bar")
 
@@ -752,7 +751,7 @@ describe Kintsugi, :apply_change_to_project do
     base_project.save
     theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-    theirs_project.root_object.known_regions += ["en"]
+    theirs_project.root_object.known_regions += ["fr"]
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
@@ -763,9 +762,6 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "removes known regions" do
-    base_project.root_object.known_regions += ["en"]
-
-    base_project.save
     theirs_project = create_copy_of_project(base_project.path, "theirs")
 
     theirs_project.root_object.known_regions = []
@@ -934,7 +930,15 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   def get_diff(first_project, second_project)
-    Xcodeproj::Differ.project_diff(first_project, second_project, :added, :removed)
+    diff = Xcodeproj::Differ.project_diff(first_project, second_project, :added, :removed)
+
+    diff_without_display_name =
+      diff.merge("rootObject" => diff["rootObject"].reject { |key, _| key == "displayName" })
+    if diff_without_display_name == {"rootObject" => {}}
+      raise "Diff contains no changes. This probably means the test doesn't check anything."
+    end
+
+    diff
   end
 
   def add_new_subproject_to_project(project, subproject_name, subproject_product_name)
