@@ -524,6 +524,12 @@ module Kintsugi
         find_file(root_object.project, project_reference_change["ProjectRef"],
                   file_filter: filter_subproject_without_project_references)
 
+      unless subproject_reference
+        raise MergeError, "No file reference was found for project reference with change " \
+          "#{project_reference_change}. This might mean that the file used to exist in the " \
+          "project the but was removed at some point"
+      end
+
       attribute =
         Xcodeproj::Project::PBXProject.references_by_keys_attributes
                                       .find { |attrb| attrb.name == :project_references }
