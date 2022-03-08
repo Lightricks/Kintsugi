@@ -7,6 +7,7 @@ require "rspec"
 require "tempfile"
 require "tmpdir"
 
+require "kintsugi/error"
 require "kintsugi/apply_change_to_project"
 
 require_relative "be_equivalent_to_project"
@@ -112,6 +113,23 @@ describe Kintsugi, :apply_change_to_project do
     base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
+  end
+
+  it "raises if adding subproject whose file reference isn't found" do
+    ours_project = create_copy_of_project(base_project.path, "ours")
+
+    add_new_subproject_to_project(base_project, "foo", "foo")
+    base_project.save
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+    base_project.root_object.project_references.pop
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    expect {
+      described_class.apply_change_to_project(ours_project, changes_to_apply)
+    }.to raise_error(Kintsugi::MergeError)
   end
 
   describe "file related changes" do
