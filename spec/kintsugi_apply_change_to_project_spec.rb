@@ -7,8 +7,8 @@ require "rspec"
 require "tempfile"
 require "tmpdir"
 
-require "kintsugi/error"
 require "kintsugi/apply_change_to_project"
+require "kintsugi/error"
 
 require_relative "be_equivalent_to_project"
 
@@ -621,69 +621,399 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
 
-    it "adds new build setting" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+    describe "build settings" do
+      it "adds new string build setting" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      theirs_project.targets[0].build_configurations.each do |configuration|
-        configuration.build_settings["HEADER_SEARCH_PATHS"] = [
-          "$(SRCROOT)/../Foo",
-          "$(SRCROOT)/../Bar"
-        ]
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "$(SRCROOT)/../Bar"
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
       end
 
-      changes_to_apply = get_diff(theirs_project, base_project)
+      it "adds new array build setting" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings = {}
+        end
 
-      described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      expect(base_project).to be_equivalent_to_project(theirs_project)
-    end
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = [
+            "$(SRCROOT)/../Foo",
+            "$(SRCROOT)/../Bar"
+          ]
+        end
 
-    it "adds values to existing build setting" do
-      base_project.targets[0].build_configurations.each do |configuration|
-        configuration.build_settings["HEADER_SEARCH_PATHS"] = [
-          "$(SRCROOT)/../Foo"
-        ]
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
       end
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      it "adds new hash build setting" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      theirs_project.targets[0].build_configurations.each do |configuration|
-        configuration.build_settings["HEADER_SEARCH_PATHS"] = [
-          "$(SRCROOT)/../Foo",
-          "$(SRCROOT)/../Bar"
-        ]
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = [
+            "$(SRCROOT)/../Foo",
+            "$(SRCROOT)/../Bar"
+          ]
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
       end
 
-      changes_to_apply = get_diff(theirs_project, base_project)
+      it "adds values to existing array build setting" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = [
+            "$(SRCROOT)/../Foo"
+          ]
+        end
 
-      described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      expect(base_project).to be_equivalent_to_project(theirs_project)
-    end
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = [
+            "$(SRCROOT)/../Foo",
+            "$(SRCROOT)/../Bar"
+          ]
+        end
 
-    it "removes build setting" do
-      base_project.targets[0].build_configurations.each do |configuration|
-        configuration.build_settings["HEADER_SEARCH_PATHS"] = [
-          "$(SRCROOT)/../Foo",
-          "$(SRCROOT)/../Bar"
-        ]
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
       end
 
-      base_project.save
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      it "adds array value to an existing string if no removed value" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      theirs_project.targets[0].build_configurations.each do |configuration|
-        configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
+        end
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+        ours_project.save
+
+        described_class.apply_change_to_project(ours_project, changes_to_apply)
+        ours_project.save
+
+        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo baz]
+        end
+        expect(ours_project).to be_equivalent_to_project(expected_project)
       end
 
-      changes_to_apply = get_diff(theirs_project, base_project)
+      it "adds string value to existing array value if no removed value" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+        changes_to_apply = get_diff(theirs_project, base_project)
 
-      expect(base_project).to be_equivalent_to_project(theirs_project)
+        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
+        end
+        ours_project.save
+
+        described_class.apply_change_to_project(ours_project, changes_to_apply)
+        ours_project.save
+
+        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo baz]
+        end
+        expect(ours_project).to be_equivalent_to_project(expected_project)
+      end
+
+      it "removes array build setting" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = [
+            "$(SRCROOT)/../Foo",
+            "$(SRCROOT)/../Bar"
+          ]
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes string build setting" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings =
+            configuration.build_settings.reject { |key, _| key == "HEADER_SEARCH_PATHS" }
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes hash build setting" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings = nil
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes hash build setting if removed hash contains the existing hash" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+          configuration.build_settings["foo"] = "baz"
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings = nil
+        end
+
+        ours_project = create_copy_of_project(base_project.path, "theirs")
+        ours_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["foo"] = nil
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes value if existing is string and removed is array that contains it" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+        base_project.save
+
+        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = ["bar"]
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes value if removed value is string and existing is array that contains it" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = ["bar"]
+        end
+        base_project.save
+
+        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "removes value if existing is string and removed is array that contains it among other " \
+          "values" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+        base_project.save
+
+        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
+        end
+        expect(base_project).to be_equivalent_to_project(expected_project)
+      end
+
+      it "changes to a single string value if removed is string and existing is array that " \
+          "contains it among another value" do
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
+        end
+        base_project.save
+
+        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+        expect(base_project).to be_equivalent_to_project(expected_project)
+      end
+
+      it "changes to string value if change contains removal of existing array" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "changes to array value if change contains removal of existing string" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[baz foo]
+        end
+
+        changes_to_apply = get_diff(theirs_project, base_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(theirs_project)
+      end
+
+      it "raises if added value is string and existing is another string and removal is nil" do
+        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+        base_project.save
+
+        theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        expect {
+          described_class.apply_change_to_project(base_project, changes_to_apply)
+        }.to raise_error(Kintsugi::MergeError)
+      end
+
+      it "raises if trying to remove hash entry whose value changed" do
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+        end
+
+        base_project.save
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings = nil
+        end
+
+        base_project.save
+        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+        before_theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        expect {
+          described_class.apply_change_to_project(base_project, changes_to_apply)
+        }.to raise_error(Kintsugi::MergeError)
+      end
     end
 
     it "adds build phases" do
@@ -829,7 +1159,7 @@ describe Kintsugi, :apply_change_to_project do
   it "removes known regions" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-    theirs_project.root_object.known_regions = []
+    theirs_project.root_object.known_regions = nil
 
     changes_to_apply = get_diff(theirs_project, base_project)
 

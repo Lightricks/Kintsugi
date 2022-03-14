@@ -5,6 +5,7 @@
 require "xcodeproj"
 
 require_relative "utils"
+require_relative "error"
 require_relative "xcodeproj_extensions"
 
 module Kintsugi
@@ -164,15 +165,8 @@ module Kintsugi
     end
 
     def simple_attribute_value_with_change(old_value, change)
-      new_value = nil
-
-      if change.key?(:removed)
-        new_value = apply_removal_to_simple_attribute(old_value, change[:removed], change[:added])
-      end
-
-      if change.key?(:added)
-        new_value = apply_addition_to_simple_attribute(old_value, change[:added])
-      end
+      type = simple_attribute_type(old_value, change[:removed], change[:added])
+      new_value = new_simple_attribute_value(type, old_value, change[:removed], change[:added])
 
       subchanges_of_change(change).each do |subchange_name, subchange_value|
         new_value = new_value || old_value || {}
@@ -183,13 +177,67 @@ module Kintsugi
       new_value
     end
 
-    def apply_removal_to_simple_attribute(old_value, removed_change, added_change)
-      case removed_change
-      when Array
-        (old_value || []) - removed_change
-      when Hash
-        (old_value || {}).reject do |key, value|
-          if value != removed_change[key] && added_change[key] != value
+    def simple_attribute_type(old_value, removed_change, added_change)
+      types = [old_value.class, removed_change.class, added_change.class]
+
+      if types.include?(Hash)
+        unless types.to_set.subset?([Hash, NilClass].to_set)
+          raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
+            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
+            "'#{added_change}'"
+        end
+        Hash
+      elsif types.include?(Array)
+        unless types.to_set.subset?([Array, String, NilClass].to_set)
+          raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
+            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
+            "'#{added_change}'"
+        end
+        Array
+      elsif types.include?(String)
+        unless types.to_set.subset?([String, NilClass].to_set)
+          raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
+            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
+            "'#{added_change}'"
+        end
+        String
+      else
+        raise MergeError, "Unsupported types of all of the values. Existing value: " \
+          "'#{old_value}', removed change: '#{removed_change}', added change: '#{added_change}'"
+      end
+    end
+
+    def new_simple_attribute_value(type, old_value, removed_change, added_change)
+      if type == Hash
+        new_hash_simple_attribute_value(old_value, removed_change, added_change)
+      elsif type == Array
+        new_array_simple_attribute_value(old_value, removed_change, added_change)
+      elsif type == String
+        new_string_simple_attribute_value(old_value, removed_change, added_change)
+      else
+        raise MergeError, "Unsupported types of all of the values. Existing value: " \
+          "'#{old_value}', removed change: '#{removed_change}', added change: '#{added_change}'"
+      end
+    end
+
+    def new_hash_simple_attribute_value(old_value, removed_change, added_change)
+      return added_change if ((old_value || {}).to_a - (removed_change || {}).to_a).empty?
+
+      # First apply the added change to see if there are any conflicts with it.
+      new_value = (old_value || {}).merge(added_change || {})
+
+      unless (old_value.to_a - new_value.to_a).empty?
+        raise MergeError, "New hash #{change} contains values that conflict with old hash " \
+          "#{old_value}"
+      end
+
+      if removed_change.nil?
+        return new_value
+      end
+
+      new_value
+        .reject do |key, value|
+          if value != removed_change[key] && value != (added_change || {})[key]
             raise MergeError, "Trying to remove value '#{removed_change[key]}' of hash with key " \
               "'#{key}' but it changed to #{value}. This is considered a conflict that should be " \
               "resolved manually."
@@ -197,41 +245,31 @@ module Kintsugi
 
           removed_change.key?(key)
         end
-      when String
-        if old_value != removed_change && !old_value.nil? && added_change != old_value
-          raise MergeError, "Trying to remove value '#{removed_change}', but the existing value " \
-            "is '#{old_value}'. This is considered a conflict that should be resolved manually."
-        end
-
-        nil
-      when nil
-        nil
-      else
-        raise MergeError, "Unsupported change #{removed_change} of type #{removed_change.class}"
-      end
     end
 
-    def apply_addition_to_simple_attribute(old_value, change)
-      case change
-      when Array
-        (old_value || []) + change
-      when Hash
-        old_value ||= {}
-        new_value = old_value.merge(change)
-
-        unless (old_value.to_a - new_value.to_a).empty?
-          raise MergeError, "New hash #{change} contains values that conflict with old hash " \
-            "#{old_value}"
-        end
-
-        new_value
-      when String
-        change
-      when nil
-        nil
-      else
-        raise MergeError, "Unsupported change #{change} of type #{change.class}"
+    def new_array_simple_attribute_value(old_value, removed_change, added_change)
+      if old_value.is_a?(String)
+        old_value = [old_value]
       end
+      if removed_change.is_a?(String)
+        removed_change = [removed_change]
+      end
+      if added_change.is_a?(String)
+        added_change = [added_change]
+      end
+
+      return added_change if ((old_value || []) - (removed_change || [])).empty?
+
+      (old_value || []) + (added_change || []) - (removed_change || [])
+    end
+
+    def new_string_simple_attribute_value(old_value, removed_change, added_change)
+      if old_value != removed_change && !old_value.nil? && added_change != old_value
+        raise MergeError, "Trying to remove value '#{removed_change || "nil"}', but the existing " \
+          "value is '#{old_value}'. This is considered a conflict that should be resolved manually."
+      end
+
+      added_change
     end
 
     def remove_component(component, change)
@@ -581,8 +619,10 @@ module Kintsugi
         file_reference = containing_component.project.new(Xcodeproj::Project::PBXFileReference)
         containing_component.children << file_reference
 
-        # For some reason, `include_in_index` is set to `1` by default.
+        # For some reason, `include_in_index` is set to `1` and `source_tree` to `SDKROOT` by
+        # default.
         file_reference.include_in_index = nil
+        file_reference.source_tree = nil
         add_attributes_to_component(file_reference, change)
       else
         raise MergeError, "Trying to add file reference to an unsupported component type " \
