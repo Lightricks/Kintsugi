@@ -971,7 +971,8 @@ describe Kintsugi, :apply_change_to_project do
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
 
-      it "raises if added value is string and existing is another string and removal is nil" do
+      it "changes to array if added value is string and existing is another string and removal is" \
+          "nil for an array build setting" do
         before_theirs_project = create_copy_of_project(base_project.path, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
@@ -982,6 +983,33 @@ describe Kintsugi, :apply_change_to_project do
         theirs_project = create_copy_of_project(base_project.path, "before_theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
+        end
+
+        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
+        end
+
+        changes_to_apply = get_diff(theirs_project, before_theirs_project)
+
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+        base_project.save
+
+        expect(base_project).to be_equivalent_to_project(expected_project)
+      end
+
+      it "raises if added value is string and existing is another string and removal is nil for a " \
+          "string build setting" do
+        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+        base_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["PRODUCT_NAME"] = "bar"
+        end
+        base_project.save
+
+        theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        theirs_project.targets[0].build_configurations.each do |configuration|
+          configuration.build_settings["PRODUCT_NAME"] = "baz"
         end
 
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
