@@ -109,7 +109,7 @@ module Kintsugi
     def global_attributes_file_path
       # The logic to decide the path to the global attributes file is described at:
       # https://git-scm.com/docs/gitattributes.
-      config_attributes_file_path = `git config --global core.attributesfile`
+      config_attributes_file_path = `git config --global core.attributesfile`.chomp
       return config_attributes_file_path unless config_attributes_file_path.empty?
 
       if ENV["XDG_CONFIG_HOME"].nil? || ENV["XDG_CONFIG_HOME"].empty?
