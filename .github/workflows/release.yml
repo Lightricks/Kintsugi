@@ -1,0 +1,24 @@
+name: Release
+
+on: workflow_dispatch
+
+jobs:
+  main-job:
+    name: Release
+    runs-on: ubuntu-latest
+    env:
+      GEM_HOST_API_KEY: ${{ secrets.GEM_HOST_API_KEY }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.5.8
+
+      - name: Publish to rubygems.org
+        run: |
+          gem build *.gemspec
+          gem push *.gem
