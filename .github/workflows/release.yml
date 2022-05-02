@@ -17,6 +17,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 2.5.8
+          rubygems: latest
 
       - name: Publish to rubygems.org
         run: |
