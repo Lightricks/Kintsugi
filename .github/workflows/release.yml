@@ -19,6 +19,13 @@ jobs:
           ruby-version: 2.5.8
           rubygems: latest
 
+      - name: Draft a new release
+        run: |
+          version="v$(grep STRING lib/kintsugi/version.rb | cut -d \" -f 2)"
+          git tag $version
+          git push --tag
+          gh release create $version --generate-notes
+
       - name: Publish to rubygems.org
         run: |
           gem build *.gemspec
