@@ -29,25 +29,27 @@ module Kintsugi
           puts "Warning: Main group doesn't exist, ignoring changes to it."
         else
           apply_change_to_component(project.root_object, "mainGroup",
-                                    change["rootObject"]["mainGroup"])
+                                    change["rootObject"]["mainGroup"], "rootObject")
         end
       end
 
       unless change["rootObject"]["projectReferences"].nil?
         apply_change_to_component(project.root_object, "projectReferences",
-                                  change["rootObject"]["projectReferences"])
+                                  change["rootObject"]["projectReferences"], "rootObject")
       end
 
       apply_change_to_component(project, "rootObject",
                                 change["rootObject"].reject { |key|
                                   %w[mainGroup projectReferences].include?(key)
-                                })
+                                }, "")
     end
 
     private
 
-    def apply_change_to_component(parent_component, change_name, change)
+    def apply_change_to_component(parent_component, change_name, change, parent_change_path)
       return if change_name == "displayName"
+
+      change_path = parent_change_path.empty? ? change_name : "#{parent_change_path}/#{change_name}"
 
       attribute_name = attribute_name_from_change_name(change_name)
       if simple_attribute?(parent_component, attribute_name)
@@ -62,7 +64,7 @@ module Kintsugi
         component = child_component(parent_component, change_name)
 
         if component.nil?
-          add_missing_component_if_valid(parent_component, change_name, change)
+          add_missing_component_if_valid(parent_component, change_name, change, change_path)
           return
         end
       end
@@ -76,11 +78,12 @@ module Kintsugi
 
       (change[:added] || []).each do |added_change|
         is_object_list = component.is_a?(Xcodeproj::Project::ObjectList)
-        add_child_to_component(is_object_list ? parent_component : component, added_change)
+        add_child_to_component(is_object_list ? parent_component : component, added_change,
+                               change_path)
       end
 
       subchanges_of_change(change).each do |subchange_name, subchange|
-        apply_change_to_component(component, subchange_name, subchange)
+        apply_change_to_component(component, subchange_name, subchange, change_path)
       end
     end
 
@@ -100,9 +103,9 @@ module Kintsugi
       end
     end
 
-    def add_missing_component_if_valid(parent_component, change_name, change)
+    def add_missing_component_if_valid(parent_component, change_name, change, change_path)
       if change[:added] && change.compact.count == 1
-        add_child_to_component(parent_component, change[:added])
+        add_child_to_component(parent_component, change[:added], change_path)
         return
       end
 
@@ -298,63 +301,65 @@ module Kintsugi
       end
     end
 
-    def add_child_to_component(component, change)
+    def add_child_to_component(component, change, component_change_path)
+      change_path = "#{component_change_path}/#{change["displayName"]}"
+
       if change["ProjectRef"] && change["ProductGroup"]
-        add_subproject_reference(component, change)
+        add_subproject_reference(component, change, change_path)
         return
       end
 
       case change["isa"]
       when "PBXNativeTarget"
-        add_target(component, change)
+        add_target(component, change, change_path)
       when "PBXAggregateTarget"
-        add_aggregate_target(component, change)
+        add_aggregate_target(component, change, change_path)
       when "PBXFileReference"
-        add_file_reference(component, change)
+        add_file_reference(component, change, change_path)
       when "PBXGroup"
-        add_group(component, change)
+        add_group(component, change, change_path)
       when "PBXContainerItemProxy"
-        add_container_item_proxy(component, change)
+        add_container_item_proxy(component, change, change_path)
       when "PBXTargetDependency"
-        add_target_dependency(component, change)
+        add_target_dependency(component, change, change_path)
       when "PBXBuildFile"
-        add_build_file(component, change)
+        add_build_file(component, change, change_path)
       when "XCConfigurationList"
-        add_build_configuration_list(component, change)
+        add_build_configuration_list(component, change, change_path)
       when "XCBuildConfiguration"
-        add_build_configuration(component, change)
+        add_build_configuration(component, change, change_path)
       when "PBXHeadersBuildPhase"
-        add_headers_build_phase(component, change)
+        add_headers_build_phase(component, change, change_path)
       when "PBXSourcesBuildPhase"
-        add_sources_build_phase(component, change)
+        add_sources_build_phase(component, change, change_path)
       when "PBXCopyFilesBuildPhase"
-        add_copy_files_build_phase(component, change)
+        add_copy_files_build_phase(component, change, change_path)
       when "PBXShellScriptBuildPhase"
-        add_shell_script_build_phase(component, change)
+        add_shell_script_build_phase(component, change, change_path)
       when "PBXFrameworksBuildPhase"
-        add_frameworks_build_phase(component, change)
+        add_frameworks_build_phase(component, change, change_path)
       when "PBXResourcesBuildPhase"
-        add_resources_build_phase(component, change)
+        add_resources_build_phase(component, change, change_path)
       when "PBXBuildRule"
-        add_build_rule(component, change)
+        add_build_rule(component, change, change_path)
       when "PBXVariantGroup"
-        add_variant_group(component, change)
+        add_variant_group(component, change, change_path)
       when "PBXReferenceProxy"
-        add_reference_proxy(component, change)
+        add_reference_proxy(component, change, change_path)
       when "XCSwiftPackageProductDependency"
-        add_swift_package_product_dependency(component, change)
+        add_swift_package_product_dependency(component, change, change_path)
       when "XCRemoteSwiftPackageReference"
-        add_remote_swift_package_reference(component, change)
+        add_remote_swift_package_reference(component, change, change_path)
       else
         raise MergeError, "Trying to add unsupported component type #{change["isa"]}. Full " \
           "component change is: #{change}"
       end
     end
 
-    def add_remote_swift_package_reference(containing_component, change)
+    def add_remote_swift_package_reference(containing_component, change, change_path)
       remote_swift_package_reference =
         containing_component.project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
-      add_attributes_to_component(remote_swift_package_reference, change)
+      add_attributes_to_component(remote_swift_package_reference, change, change_path)
 
       case containing_component
       when Xcodeproj::Project::XCSwiftPackageProductDependency
@@ -367,10 +372,10 @@ module Kintsugi
       end
     end
 
-    def add_swift_package_product_dependency(containing_component, change)
+    def add_swift_package_product_dependency(containing_component, change, change_path)
       swift_package_product_dependency =
         containing_component.project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
-      add_attributes_to_component(swift_package_product_dependency, change)
+      add_attributes_to_component(swift_package_product_dependency, change, change_path)
 
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
@@ -383,7 +388,7 @@ module Kintsugi
       end
     end
 
-    def add_reference_proxy(containing_component, change)
+    def add_reference_proxy(containing_component, change, change_path)
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
         # If there are two file references that refer to the same file, one with a build file and
@@ -405,74 +410,78 @@ module Kintsugi
       when Xcodeproj::Project::PBXGroup
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
-        add_attributes_to_component(reference_proxy, change)
+        add_attributes_to_component(reference_proxy, change, change_path)
       else
         raise MergeError, "Trying to add reference proxy to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
-    def add_variant_group(containing_component, change)
+    def add_variant_group(containing_component, change, change_path)
       case containing_component
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref =
           find_variant_group(containing_component.project, change["displayName"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
+        unless adding_files_and_groups_allowed?(change_path)
+          return
+        end
+
         variant_group = containing_component.project.new(Xcodeproj::Project::PBXVariantGroup)
         containing_component.children << variant_group
-        add_attributes_to_component(variant_group, change)
+        add_attributes_to_component(variant_group, change, change_path)
       else
         raise MergeError, "Trying to add variant group to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
-    def add_build_rule(target, change)
+    def add_build_rule(target, change, change_path)
       build_rule = target.project.new(Xcodeproj::Project::PBXBuildRule)
       target.build_rules << build_rule
-      add_attributes_to_component(build_rule, change)
+      add_attributes_to_component(build_rule, change, change_path)
     end
 
-    def add_shell_script_build_phase(target, change)
+    def add_shell_script_build_phase(target, change, change_path)
       build_phase = target.new_shell_script_build_phase(change["displayName"])
-      add_attributes_to_component(build_phase, change)
+      add_attributes_to_component(build_phase, change, change_path)
     end
 
-    def add_headers_build_phase(target, change)
-      add_attributes_to_component(target.headers_build_phase, change)
+    def add_headers_build_phase(target, change, change_path)
+      add_attributes_to_component(target.headers_build_phase, change, change_path)
     end
 
-    def add_sources_build_phase(target, change)
-      add_attributes_to_component(target.source_build_phase, change)
+    def add_sources_build_phase(target, change, change_path)
+      add_attributes_to_component(target.source_build_phase, change, change_path)
     end
 
-    def add_frameworks_build_phase(target, change)
-      add_attributes_to_component(target.frameworks_build_phase, change)
+    def add_frameworks_build_phase(target, change, change_path)
+      add_attributes_to_component(target.frameworks_build_phase, change, change_path)
     end
 
-    def add_resources_build_phase(target, change)
-      add_attributes_to_component(target.resources_build_phase, change)
+    def add_resources_build_phase(target, change, change_path)
+      add_attributes_to_component(target.resources_build_phase, change, change_path)
     end
 
-    def add_copy_files_build_phase(target, change)
+    def add_copy_files_build_phase(target, change, change_path)
       copy_files_phase_name = change["displayName"] == "CopyFiles" ? nil : change["displayName"]
       copy_files_phase = target.new_copy_files_build_phase(copy_files_phase_name)
 
-      add_attributes_to_component(copy_files_phase, change)
+      add_attributes_to_component(copy_files_phase, change, change_path)
     end
 
-    def add_build_configuration_list(target, change)
+    def add_build_configuration_list(target, change, change_path)
       target.build_configuration_list = target.project.new(Xcodeproj::Project::XCConfigurationList)
-      add_attributes_to_component(target.build_configuration_list, change)
+      add_attributes_to_component(target.build_configuration_list, change, change_path)
     end
 
-    def add_build_configuration(configuration_list, change)
+    def add_build_configuration(configuration_list, change, change_path)
       build_configuration = configuration_list.project.new(Xcodeproj::Project::XCBuildConfiguration)
       configuration_list.build_configurations << build_configuration
-      add_attributes_to_component(build_configuration, change)
+      add_attributes_to_component(build_configuration, change, change_path)
     end
 
-    def add_build_file(build_phase, change)
+    def add_build_file(build_phase, change, change_path)
       if change["fileRef"].nil?
         puts "Warning: Trying to add a build file without any file reference to build phase " \
           "'#{build_phase}'"
@@ -481,7 +490,7 @@ module Kintsugi
 
       build_file = build_phase.project.new(Xcodeproj::Project::PBXBuildFile)
       build_phase.files << build_file
-      add_attributes_to_component(build_file, change)
+      add_attributes_to_component(build_file, change, change_path)
     end
 
     def find_variant_group(project, display_name)
@@ -490,7 +499,7 @@ module Kintsugi
       end
     end
 
-    def add_target_dependency(target, change)
+    def add_target_dependency(target, change, change_path)
       target_dependency = find_target(target.project, change["displayName"])
 
       if target_dependency
@@ -501,14 +510,14 @@ module Kintsugi
       target_dependency = target.project.new(Xcodeproj::Project::PBXTargetDependency)
 
       target.dependencies << target_dependency
-      add_attributes_to_component(target_dependency, change)
+      add_attributes_to_component(target_dependency, change, change_path)
     end
 
     def find_target(project, display_name)
       project.targets.find { |target| target.display_name == display_name }
     end
 
-    def add_container_item_proxy(component, change)
+    def add_container_item_proxy(component, change, change_path)
       container_proxy = component.project.new(Xcodeproj::Project::PBXContainerItemProxy)
       container_proxy.container_portal = find_containing_project_uuid(component.project, change)
 
@@ -521,7 +530,8 @@ module Kintsugi
         raise MergeError, "Trying to add container item proxy to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
-      add_attributes_to_component(container_proxy, change, ignore_keys: ["containerPortal"])
+      add_attributes_to_component(container_proxy, change, change_path,
+                                  ignore_keys: ["containerPortal"])
     end
 
     def find_containing_project_uuid(project, container_item_proxy_change)
@@ -552,7 +562,7 @@ module Kintsugi
       container_item_proxies.first.container_portal
     end
 
-    def add_subproject_reference(root_object, project_reference_change)
+    def add_subproject_reference(root_object, project_reference_change, change_path)
       filter_subproject_without_project_references = lambda do |file_reference|
         root_object.project_references.find do |project_reference|
           project_reference.project_ref.uuid == file_reference.uuid
@@ -578,7 +588,7 @@ module Kintsugi
       updated_project_reference_change =
         change_with_updated_subproject_uuid(project_reference_change, subproject_reference.uuid)
       add_attributes_to_component(project_reference, updated_project_reference_change,
-                                  ignore_keys: ["ProjectRef"])
+                                  change_path, ignore_keys: ["ProjectRef"])
     end
 
     def change_with_updated_subproject_uuid(change, subproject_reference_uuid)
@@ -590,19 +600,19 @@ module Kintsugi
       new_change
     end
 
-    def add_target(root_object, change)
+    def add_target(root_object, change, change_path)
       target = root_object.project.new(Xcodeproj::Project::PBXNativeTarget)
       root_object.project.targets << target
-      add_attributes_to_component(target, change)
+      add_attributes_to_component(target, change, change_path)
     end
 
-    def add_aggregate_target(root_object, change)
+    def add_aggregate_target(root_object, change, change_path)
       target = root_object.project.new(Xcodeproj::Project::PBXAggregateTarget)
       root_object.project.targets << target
-      add_attributes_to_component(target, change)
+      add_attributes_to_component(target, change, change_path)
     end
 
-    def add_file_reference(containing_component, change)
+    def add_file_reference(containing_component, change, change_path)
       # base configuration reference and product reference always reference a file that exists
       # inside a group, therefore in these cases the file is searched for.
       # In the case of group and variant group, the file can't exist in another group, therefore a
@@ -616,6 +626,10 @@ module Kintsugi
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref = find_file(containing_component.project, change)
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
+        unless adding_files_and_groups_allowed?(change_path)
+          return
+        end
+
         file_reference = containing_component.project.new(Xcodeproj::Project::PBXFileReference)
         containing_component.children << file_reference
 
@@ -623,14 +637,23 @@ module Kintsugi
         # default.
         file_reference.include_in_index = nil
         file_reference.source_tree = nil
-        add_attributes_to_component(file_reference, change)
+        add_attributes_to_component(file_reference, change, change_path)
       else
         raise MergeError, "Trying to add file reference to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
-    def add_group(containing_component, change)
+    def adding_files_and_groups_allowed?(change_path)
+      change_path.start_with?("rootObject/mainGroup") ||
+        change_path.start_with?("rootObject/projectReferences")
+    end
+
+    def add_group(containing_component, change, change_path)
+      unless adding_files_and_groups_allowed?(change_path)
+        return
+      end
+
       case containing_component
       when Xcodeproj::Project::ObjectDictionary
         # It is assumed that an `ObjectDictionary` always represents a project reference.
@@ -644,10 +667,10 @@ module Kintsugi
           "#{containing_component.isa}. Change is: #{change}"
       end
 
-      add_attributes_to_component(new_group, change)
+      add_attributes_to_component(new_group, change, change_path)
     end
 
-    def add_attributes_to_component(component, change, ignore_keys: [])
+    def add_attributes_to_component(component, change, change_path, ignore_keys: [])
       change.each do |change_name, change_value|
         next if (%w[isa displayName] + ignore_keys).include?(change_name)
 
@@ -659,10 +682,10 @@ module Kintsugi
 
         case change_value
         when Hash
-          add_child_to_component(component, change_value)
+          add_child_to_component(component, change_value, change_path)
         when Array
           change_value.each do |added_attribute_element|
-            add_child_to_component(component, added_attribute_element)
+            add_child_to_component(component, added_attribute_element, change_path)
           end
         else
           raise MergeError, "Trying to add attribute of unsupported type '#{change_value.class}' " \

@@ -1346,6 +1346,41 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
+  it "adds group to product group" do
+    base_project_path = make_temp_directory("base", ".xcodeproj")
+    base_project = Xcodeproj::Project.new(base_project_path)
+    base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
+
+    base_project.save
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+    theirs_project.root_object.product_ref_group.new_group("foo")
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
+  it "adds localization files to product group" do
+    base_project_path = make_temp_directory("base", ".xcodeproj")
+    base_project = Xcodeproj::Project.new(base_project_path)
+    base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
+
+    base_project.save
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+    variant_group = theirs_project.root_object.product_ref_group.new_variant_group("foo.strings")
+    variant_group.new_reference("Base").last_known_file_type = "text.plist.strings"
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
   def create_copy_of_project(project_path, new_project_prefix)
     copied_project_path = make_temp_directory(new_project_prefix, ".xcodeproj")
     FileUtils.cp(File.join(project_path, "project.pbxproj"), copied_project_path)

@@ -12,6 +12,9 @@ RSpec/MultipleExpectations:
 AllCops:
   DisplayCopNames: true
   TargetRubyVersion: 2.5
+  Exclude:
+    - 'lib/**/xcodeproj_extensions.rb'
+    - 'vendor/bundle/**/*'
   NewCops: enable
 
 Metrics/BlockLength:
