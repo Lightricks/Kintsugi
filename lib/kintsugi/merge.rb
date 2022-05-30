@@ -32,16 +32,17 @@ module Kintsugi
     def resolve_conflicts(project_file_path, changes_output_path)
       validate_project(project_file_path)
 
-      project_in_temp_directory =
-        open_project_of_current_commit_in_temporary_directory(project_file_path)
+      base_project = copy_project_from_stage_number_to_temporary_directory(project_file_path, 1)
+      ours_project = copy_project_from_stage_number_to_temporary_directory(project_file_path, 2)
+      theirs_project = copy_project_from_stage_number_to_temporary_directory(project_file_path, 3)
 
-      change = change_of_conflicting_commit_with_parent(project_file_path)
+      change = Xcodeproj::Differ.project_diff(theirs_project, base_project, :added, :removed)
 
       if changes_output_path
         File.write(changes_output_path, JSON.pretty_generate(change))
       end
 
-      apply_change_and_copy_to_original_path(project_in_temp_directory, change, project_file_path)
+      apply_change_and_copy_to_original_path(ours_project, change, project_file_path)
     end
 
     # Merges the changes done between `theirs_project_path` and `base_project_path` to the file at
@@ -103,12 +104,20 @@ module Kintsugi
         raise ArgumentError, "Wrong file extension, please provide file with extension .pbxproj\""
       end
 
-      Dir.chdir(File.dirname(project_file_path)) do
-        unless file_has_base_ours_and_theirs_versions?(project_file_path)
-          raise ArgumentError, "File '#{project_file_path}' doesn't have conflicts, " \
-            "or a 3-way merge is not possible."
-        end
+      unless file_has_base_ours_and_theirs_versions?(project_file_path)
+        raise ArgumentError, "File '#{project_file_path}' doesn't have conflicts, " \
+          "or a 3-way merge is not possible."
       end
+    end
+
+    def copy_project_from_stage_number_to_temporary_directory(project_file_path, stage_number)
+      project_directory_name = File.basename(File.dirname(project_file_path))
+      temp_project_file_path = File.join(Dir.mktmpdir, project_directory_name, PROJECT_FILE_NAME)
+      Dir.mkdir(File.dirname(temp_project_file_path))
+      Dir.chdir(File.dirname(project_file_path)) do
+        `git show :#{stage_number}:./#{PROJECT_FILE_NAME} > "#{temp_project_file_path}"`
+      end
+      Xcodeproj::Project.open(File.dirname(temp_project_file_path))
     end
 
     def copy_project_to_temporary_path_in_directory_with_name(project_file_path, directory_name)
@@ -119,19 +128,8 @@ module Kintsugi
       Xcodeproj::Project.open(File.dirname(temp_project_file_path))
     end
 
-    def open_project_of_current_commit_in_temporary_directory(project_file_path)
-      project_directory_name = File.basename(File.dirname(project_file_path))
-      temp_directory_name = File.join(Dir.mktmpdir, project_directory_name)
-      Dir.mkdir(temp_directory_name)
-      temp_project_file_path = File.join(temp_directory_name, PROJECT_FILE_NAME)
-      Dir.chdir(File.dirname(project_file_path)) do
-        `git show HEAD:./project.pbxproj > "#{temp_project_file_path}"`
-      end
-      Xcodeproj::Project.open(File.dirname(temp_project_file_path))
-    end
-
     def file_has_base_ours_and_theirs_versions?(file_path)
-      Dir.chdir(`git rev-parse --show-toplevel`.strip) do
+      Dir.chdir(`git -C "#{File.dirname(file_path)}" rev-parse --show-toplevel`.strip) do
         file_has_version_in_stage_numbers?(file_path, [1, 2, 3])
       end
     end
@@ -143,25 +141,6 @@ module Kintsugi
           git_file_status.split[2]
         end
       (stage_numbers - actual_stage_numbers.map(&:to_i)).empty?
-    end
-
-    def change_of_conflicting_commit_with_parent(project_file_path)
-      Dir.chdir(File.dirname(project_file_path)) do
-        conflicting_commit_project_file_path = File.join(Dir.mktmpdir, PROJECT_FILE_NAME)
-        `git show :3:./#{PROJECT_FILE_NAME} > #{conflicting_commit_project_file_path}`
-
-        conflicting_commit_parent_project_file_path = File.join(Dir.mktmpdir, PROJECT_FILE_NAME)
-        `git show :1:./#{PROJECT_FILE_NAME} > #{conflicting_commit_parent_project_file_path}`
-
-        conflicting_commit_project = Xcodeproj::Project.open(
-          File.dirname(conflicting_commit_project_file_path)
-        )
-        conflicting_commit_parent_project =
-          Xcodeproj::Project.open(File.dirname(conflicting_commit_parent_project_file_path))
-
-        Xcodeproj::Differ.project_diff(conflicting_commit_project,
-                                       conflicting_commit_parent_project, :added, :removed)
-      end
     end
   end
 end
