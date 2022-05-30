@@ -5,37 +5,9 @@
 # Created by Ben Yohay.
 
 require "kintsugi"
-require_relative "../lib/kintsugi/cli"
-require_relative "../lib/kintsugi/error"
-
-def parse_options!(command, argv)
-  options = {}
-  command.option_parser.parse!(argv, into: options)
-  options
-end
-
-def name_of_subcommand?(subcommands, argument)
-  subcommands.include?(argument)
-end
-
-first_argument = ARGV[0]
-cli = Kintsugi::CLI.new
-command =
-  if name_of_subcommand?(cli.subcommands, first_argument)
-    ARGV.shift
-    cli.subcommands[first_argument]
-  else
-    cli.root_command
-  end
-
-options = parse_options!(command, ARGV)
 
 begin
-  command.action.call(options, ARGV)
-rescue ArgumentError => e
-  puts "#{e.class}: #{e}"
-  exit(1)
-rescue Kintsugi::MergeError => e
-  puts e
+  Kintsugi.run(ARGV)
+rescue ArgumentError, Kintsugi::MergeError
   exit(1)
 end
