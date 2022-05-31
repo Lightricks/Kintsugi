@@ -66,4 +66,88 @@ module Xcodeproj
       end
     end
   end
+
+  module Differ
+      # Replaces the implementation of `array_diff` with an implementation that takes into account
+      # the number of occurrences an element is found in the array.
+      # Code was mostly copied from https://github.com/CocoaPods/Xcodeproj/blob/51fb78a03f31614103815ce21c56dc25c044a10d/lib/xcodeproj/differ.rb#L111
+      def self.array_diff(value_1, value_2, options)
+      ensure_class(value_1, Array)
+      ensure_class(value_2, Array)
+      return nil if value_1 == value_2
+
+      new_objects_value_1 = array_non_unique_diff(value_1, value_2)
+      new_objects_value_2 = array_non_unique_diff(value_2, value_1)
+      return nil if value_1.empty? && value_2.empty?
+
+      matched_diff = {}
+      if id_key = options[:id_key]
+        matched_value_1 = []
+        matched_value_2 = []
+        new_objects_value_1.each do |entry_value_1|
+          if entry_value_1.is_a?(Hash)
+            id_value = entry_value_1[id_key]
+            entry_value_2 = new_objects_value_2.find do |entry|
+              entry[id_key] == id_value
+            end
+            if entry_value_2
+              matched_value_1 << entry_value_1
+              matched_value_2 << entry_value_2
+              diff = diff(entry_value_1, entry_value_2, options)
+              matched_diff[id_value] = diff if diff
+            end
+          end
+        end
+
+        new_objects_value_1 -= matched_value_1
+        new_objects_value_2 -= matched_value_2
+      end
+
+      if new_objects_value_1.empty? && new_objects_value_2.empty?
+        if matched_diff.empty?
+          nil
+        else
+          matched_diff
+        end
+      else
+        result = {}
+        result[options[:key_1]] = new_objects_value_1 unless new_objects_value_1.empty?
+        result[options[:key_2]] = new_objects_value_2 unless new_objects_value_2.empty?
+        result[:diff] = matched_diff unless matched_diff.empty?
+        result
+      end
+    end
+
+    # Returns the difference between two arrays, taking into account the number of occurrences an
+    # element is found in both arrays.
+    #
+    # @param  [Array] value_1
+    #         First array to the difference operation.
+    #
+    # @param  [Array] value_2
+    #         Second array to the difference operation.
+    #
+    # @return [Array]
+    #
+    def self.array_non_unique_diff(value_1, value_2)
+      value_2_elements_by_count = value_2.reduce({}) do |hash, element|
+        updated_element_hash = hash.key?(element) ? {element => hash[element] + 1} : {element => 1}
+        hash.merge(updated_element_hash)
+      end
+
+      value_1_elements_by_deletions =
+        value_1.to_set.map do |element|
+          times_to_delete_element = value_2_elements_by_count[element] || 0
+          [element, times_to_delete_element]
+        end.to_h
+
+      value_1.select do |element|
+        if value_1_elements_by_deletions[element].positive?
+          value_1_elements_by_deletions[element] -= 1
+          next false
+        end
+        next true
+      end
+    end
+  end
 end
