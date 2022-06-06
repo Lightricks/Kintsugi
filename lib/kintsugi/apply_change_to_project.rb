@@ -115,15 +115,33 @@ module Kintsugi
 
     def replace_component_with_new_type(parent_component, name_in_parent_component, change)
       old_component = parent_component.send(name_in_parent_component)
-
-      new_component = parent_component.project.new(
-        Module.const_get("Xcodeproj::Project::#{change["isa"][:added]}")
-      )
+      new_component = component_of_new_type(parent_component, change, old_component)
 
       copy_attributes_to_new_component(old_component, new_component)
 
       parent_component.send("#{name_in_parent_component}=", new_component)
       new_component
+    end
+
+    def component_of_new_type(parent_component, change, old_component)
+      if change["isa"][:added] == "PBXFileReference"
+        path = (change["path"] && change["path"][:added]) || old_component.path
+        case parent_component
+        when Xcodeproj::Project::XCBuildConfiguration
+          parent_component.base_configuration_reference = find_file(parent_component.project, path)
+          return parent_component.base_configuration_reference
+        when Xcodeproj::Project::PBXNativeTarget
+          parent_component.product_reference = find_file(parent_component.project, path)
+          return parent_component.product_reference
+        when Xcodeproj::Project::PBXBuildFile
+          parent_component.file_ref = find_file(parent_component.project, path)
+          return parent_component.file_ref
+        end
+      end
+
+      parent_component.project.new(
+        Module.const_get("Xcodeproj::Project::#{change["isa"][:added]}")
+      )
     end
 
     def copy_attributes_to_new_component(old_component, new_component)
@@ -569,7 +587,7 @@ module Kintsugi
         end.nil?
       end
       subproject_reference =
-        find_file(root_object.project, project_reference_change["ProjectRef"],
+        find_file(root_object.project, project_reference_change["ProjectRef"]["path"],
                   file_filter: filter_subproject_without_project_references)
 
       unless subproject_reference
@@ -620,11 +638,12 @@ module Kintsugi
       case containing_component
       when Xcodeproj::Project::XCBuildConfiguration
         containing_component.base_configuration_reference =
-          find_file(containing_component.project, change)
+          find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXNativeTarget
-        containing_component.product_reference = find_file(containing_component.project, change)
+        containing_component.product_reference =
+          find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXBuildFile
-        containing_component.file_ref = find_file(containing_component.project, change)
+        containing_component.file_ref = find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
         unless adding_files_and_groups_allowed?(change_path)
           return
@@ -704,16 +723,14 @@ module Kintsugi
       end.default_value
     end
 
-    def find_file(project, file_reference_change, file_filter: ->(_) { true })
+    def find_file(project, path, file_filter: ->(_) { true })
       file_references = project.files.select do |file_reference|
-        file_reference.path == file_reference_change["path"] && file_filter.call(file_reference)
+        file_reference.path == path && file_filter.call(file_reference)
       end
       if file_references.length > 1
-        puts "Debug: Found more than one matching file with path " \
-          "'#{file_reference_change["path"]}'. Using the first one."
+        puts "Debug: Found more than one matching file with path '#{path}'. Using the first one."
       elsif file_references.empty?
-        puts "Debug: No file reference found for file with path " \
-          "'#{file_reference_change["path"]}'."
+        puts "Debug: No file reference found for file with path '#{path}'."
         return
       end
 
