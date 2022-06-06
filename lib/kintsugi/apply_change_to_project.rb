@@ -676,7 +676,11 @@ module Kintsugi
 
         attribute_name = attribute_name_from_change_name(change_name)
         if simple_attribute?(component, attribute_name)
-          apply_change_to_simple_attribute(component, attribute_name, {added: change_value})
+          simple_attribute_change = {
+            added: change_value,
+            removed: simple_attribute_default_value(component, attribute_name)
+          }
+          apply_change_to_simple_attribute(component, attribute_name, simple_attribute_change)
           next
         end
 
@@ -692,6 +696,12 @@ module Kintsugi
             "to object #{component}. Attribute name is '#{change_name}'"
         end
       end
+    end
+
+    def simple_attribute_default_value(component, attribute_name)
+      component.simple_attributes.find do |attribute|
+        attribute.name == attribute_name
+      end.default_value
     end
 
     def find_file(project, file_reference_change, file_filter: ->(_) { true })

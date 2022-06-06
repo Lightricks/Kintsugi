@@ -1062,6 +1062,20 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "adds build phase with a simple attribute value that has non nil default" do
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      theirs_project.targets[0].new_shell_script_build_phase("bar")
+      theirs_project.targets[0].build_phases.last.shell_script = "Other value"
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "removes build phase" do
       base_project.targets[0].new_shell_script_build_phase("bar")
 
