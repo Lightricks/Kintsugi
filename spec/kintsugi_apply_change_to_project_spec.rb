@@ -427,7 +427,8 @@ describe Kintsugi, :apply_change_to_project do
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
-      file_reference = theirs_project.main_group.new_reference(framework_filename)
+      file_reference = theirs_project.main_group.new_reference("bar")
+      file_reference.name = framework_filename
       build_phase = theirs_project.targets[0].frameworks_build_phase
       build_phase.files[-1].remove_from_project
       theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
@@ -435,6 +436,10 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
+      # This verifies we haven't created a new file reference instead of reusing the one in the
+      # hierarchy.
+      base_project.files[-1].name = "foo"
+      theirs_project.files[-1].name = "foo"
       base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
@@ -531,7 +536,7 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
 
-    it "adds build file to a file reference that already exist" do
+    it "adds build file to a file reference that already exists" do
       base_project.main_group.new_reference("bar")
 
       base_project.main_group.new_reference("bar")
