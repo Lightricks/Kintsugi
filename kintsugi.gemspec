@@ -24,6 +24,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "xcodeproj", ">= 1.19.0", "<= 1.21.0"
 
+  spec.add_development_dependency "git", "~> 1.11"
   spec.add_development_dependency "rake", "~> 13.0"
   spec.add_development_dependency "rspec", "~> 3.9"
   spec.add_development_dependency "rubocop", "1.12.0"
