@@ -50,6 +50,7 @@ module Kintsugi
           exit(1)
         end
         Kintsugi.three_way_merge(arguments[0], arguments[1], arguments[2], arguments[3])
+        warn "\e[32mKintsugi auto-merged #{arguments[3]}\e[0m"
       }
 
       Command.new(
