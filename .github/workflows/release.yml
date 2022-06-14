@@ -21,6 +21,7 @@ jobs:
 
       - name: Draft a new release
         run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | gh auth login --with-token
           version="v$(grep STRING lib/kintsugi/version.rb | cut -d \" -f 2)"
           git tag $version
           git push --tag
