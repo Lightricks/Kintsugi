@@ -77,26 +77,6 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
   end
 
-  it "adds subproject that already exists" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
-
-    subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
-    theirs_project.save
-
-    ours_project = create_copy_of_project(base_project.path, "ours")
-    add_existing_subproject_to_project(ours_project, subproject, "foo")
-
-    changes_to_apply = get_diff(theirs_project, base_project)
-
-    described_class.apply_change_to_project(ours_project, changes_to_apply)
-    ours_project.save
-
-    expect(ours_project.root_object.project_references[0][:project_ref].uuid)
-      .not_to equal(ours_project.root_object.project_references[1][:project_ref].uuid)
-    expect(ours_project.root_object.project_references[0][:project_ref].proxy_containers).not_to be_empty
-    expect(ours_project.root_object.project_references[1][:project_ref].proxy_containers).not_to be_empty
-  end
-
   # Checks that the order the changes are applied in is correct.
   it "adds new subproject and reference to its framework" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
@@ -455,7 +435,7 @@ describe Kintsugi, :apply_change_to_project do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
       build_phase = theirs_project.targets[0].frameworks_build_phase
-      build_phase.files[0].remove_from_project
+      build_phase.files.find { |build_file| build_file.display_name == "baz" }.remove_from_project
       build_phase.add_file_reference(
         theirs_project.root_object.project_references[0][:product_group].children[0]
       )
@@ -1464,6 +1444,164 @@ describe Kintsugi, :apply_change_to_project do
     described_class.apply_change_to_project(base_project, changes_to_apply)
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
+  describe "avoiding duplicate references to the same component" do
+    it "avoids adding file reference that already exists" do
+      base_project.main_group.new_reference("bar")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.new_reference("bar")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+      other_project.save
+
+      expect(other_project).to be_equivalent_to_project(base_project)
+    end
+
+    it "avoids adding group that already exists" do
+      base_project.main_group.new_group("bar")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.new_group("bar")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+      other_project.save
+
+      expect(other_project).to be_equivalent_to_project(base_project)
+    end
+
+    it "avoids adding variant group that already exists" do
+      base_project.main_group.new_variant_group("bar")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.new_variant_group("bar")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+      other_project.save
+
+      expect(other_project).to be_equivalent_to_project(base_project)
+    end
+
+    it "avoids adding subproject that already exists" do
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
+      theirs_project.save
+
+      ours_project = create_copy_of_project(base_project.path, "ours")
+      add_existing_subproject_to_project(ours_project, subproject, "foo")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(ours_project, changes_to_apply)
+      ours_project.save
+
+      expect(ours_project.root_object.project_references.count).to equal(1)
+    end
+
+    it "avoids adding build file that already exists" do
+      file_reference = base_project.main_group.new_reference("bar")
+      target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
+      target.frameworks_build_phase.add_file_reference(file_reference)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      file_reference = theirs_project.main_group.new_reference("bar")
+      theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+      other_project.save
+
+      expect(other_project).to be_equivalent_to_project(base_project)
+    end
+
+    it "avoids adding reference proxy that already exists" do
+      framework_filename = "baz"
+      subproject = add_new_subproject_to_project(base_project, "subproj", framework_filename)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      theirs_project.root_object.project_references[0][:product_group] <<
+        create_reference_proxy_from_product_reference(theirs_project,
+                                                      theirs_project.root_object.project_references[0][:project_ref],
+                                                      subproject.products_group.files[-1])
+
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+      other_project.save
+
+      expect(other_project).to be_equivalent_to_project(base_project)
+    end
+
+    it "keeps array if adding string value that already exists in array" do
+      base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
+      end
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      ours_project = create_copy_of_project(base_project.path, "ours")
+      ours_project.targets[0].build_configurations.each do |configuration|
+        configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
+      end
+      ours_project.save
+
+      expected_project = create_copy_of_project(ours_project.path, "expected")
+
+      described_class.apply_change_to_project(ours_project, changes_to_apply)
+      ours_project.save
+
+      expect(ours_project).to be_equivalent_to_project(expected_project)
+    end
+  end
+
+  describe "allowing adding reference to the same component" do
+    before do
+      Kintsugi::Settings.allow_duplicates = true
+    end
+
+    after do
+      Kintsugi::Settings.allow_duplicates = false
+    end
+
+    it "adds subproject that already exists" do
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+
+      subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
+      theirs_project.save
+
+      ours_project = create_copy_of_project(base_project.path, "ours")
+      add_existing_subproject_to_project(ours_project, subproject, "foo")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(ours_project, changes_to_apply)
+      ours_project.save
+
+      expect(ours_project.root_object.project_references[0][:project_ref].uuid)
+        .not_to equal(ours_project.root_object.project_references[1][:project_ref].uuid)
+      expect(ours_project.root_object.project_references[0][:project_ref].proxy_containers).not_to be_empty
+      expect(ours_project.root_object.project_references[1][:project_ref].proxy_containers).not_to be_empty
+    end
   end
 
   def create_copy_of_project(project_path, new_project_prefix)

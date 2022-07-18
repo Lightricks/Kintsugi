@@ -5,6 +5,7 @@
 require "fileutils"
 require "optparse"
 
+require_relative "settings"
 require_relative "version"
 
 module Kintsugi
@@ -182,6 +183,8 @@ module Kintsugi
           exit
         end
 
+        opts.on("--allow-duplicates", "Allow to add duplicates of the same entity")
+
         opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
       end
 
@@ -190,6 +193,10 @@ module Kintsugi
           puts "Incorrect number of arguments\n\n"
           puts option_parser
           exit(1)
+        end
+
+        if options[:"allow-duplicates"]
+          Settings.allow_duplicates = true
         end
 
         project_file_path = File.expand_path(arguments[0])

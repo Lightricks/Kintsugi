@@ -6,6 +6,7 @@ require "xcodeproj"
 
 require_relative "utils"
 require_relative "error"
+require_relative "settings"
 require_relative "xcodeproj_extensions"
 
 class Array
@@ -97,11 +98,25 @@ module Kintsugi
       additions.each do |change, path|
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
+        group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
         containing_group = path.empty? ? project.main_group : project[path]
-        new_group = project.new(Module.const_get("Xcodeproj::Project::#{change["isa"]}"))
+
+        next if !Settings.allow_duplicates &&
+          !find_group_in_group(containing_group, group_type, change).nil?
+
+        new_group = project.new(group_type)
         containing_group.children << new_group
         add_attributes_to_component(new_group, change, path, ignore_keys: ["children"])
       end
+    end
+
+    def find_group_in_group(group, instance_type, change)
+      group
+        .children
+        .select { |child| child.instance_of?(instance_type) }
+        .find do |child_group|
+          child_group.display_name == change["displayName"] && child_group.path == change["path"]
+        end
     end
 
     def apply_file_changes(project, additions, removals)
@@ -121,7 +136,7 @@ module Kintsugi
         containing_group = path.empty? ? project.main_group : project[path]
 
         if (removal_to_references[change] || []).empty?
-          add_file_reference(containing_group, change, "rootObject/mainGroup/#{path}")
+          apply_file_addition(containing_group, change, "rootObject/mainGroup/#{path}")
         elsif addition_to_paths[change].length == 1 &&
             removal_to_references[change].length == 1 && !removal_to_references[change].first.nil?
           removal_to_references[change].first.move(containing_group)
@@ -141,6 +156,21 @@ module Kintsugi
 
         remove_component(file_reference, change)
       end
+    end
+
+    def apply_file_addition(containing_group, change, path)
+      return if !Settings.allow_duplicates &&
+        !find_file_in_group(containing_group, Xcodeproj::Project::PBXFileReference,
+                            change["path"]).nil?
+
+      file_reference = containing_group.project.new(Xcodeproj::Project::PBXFileReference)
+      containing_group.children << file_reference
+
+      # For some reason, `include_in_index` is set to `1` and `source_tree` to `SDKROOT` by
+      # default.
+      file_reference.include_in_index = nil
+      file_reference.source_tree = nil
+      add_attributes_to_component(file_reference, change, path)
     end
 
     def apply_group_and_file_diffs(project, diffs)
@@ -401,7 +431,14 @@ module Kintsugi
 
       return added_change if ((old_value || []) - (removed_change || [])).empty?
 
-      (old_value || []) + (added_change || []) - (removed_change || [])
+      new_value = (old_value || []) - (removed_change || [])
+      filtered_added_change = if Settings.allow_duplicates
+                                (added_change || [])
+                              else
+                                (added_change || []).reject { |added| new_value.include?(added) }
+                              end
+
+      new_value + filtered_added_change
     end
 
     def new_string_simple_attribute_value(old_value, removed_change, added_change)
@@ -546,6 +583,10 @@ module Kintsugi
         end
         containing_component.file_ref = file_reference
       when Xcodeproj::Project::PBXGroup
+        return if !Settings.allow_duplicates &&
+          !find_file_in_group(containing_component, Xcodeproj::Project::PBXReferenceProxy,
+                              change["path"]).nil?
+
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
         add_attributes_to_component(reference_proxy, change, change_path)
@@ -561,13 +602,11 @@ module Kintsugi
         containing_component.file_ref =
           find_variant_group(containing_component.project, change["displayName"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        unless adding_files_and_groups_allowed?(change_path)
-          return
+        if find_group_in_group(containing_component, Xcodeproj::Project::PBXVariantGroup,
+                               change).nil?
+          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
+            "Change is: #{change}. Change path: #{change_path}"
         end
-
-        variant_group = containing_component.project.new(Xcodeproj::Project::PBXVariantGroup)
-        containing_component.children << variant_group
-        add_attributes_to_component(variant_group, change, change_path)
       else
         raise MergeError, "Trying to add variant group to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
@@ -625,6 +664,11 @@ module Kintsugi
           "'#{build_phase}'"
         return
       end
+
+      existing_build_file = build_phase.files.find do |build_file|
+        build_file.file_ref.path == change["fileRef"]["path"]
+      end
+      return if !Settings.allow_duplicates && !existing_build_file.nil?
 
       build_file = build_phase.project.new(Xcodeproj::Project::PBXBuildFile)
       build_phase.files << build_file
@@ -701,6 +745,12 @@ module Kintsugi
     end
 
     def add_subproject_reference(root_object, project_reference_change, change_path)
+      existing_subproject =
+        root_object.project_references.find do |project_reference|
+          project_reference.project_ref.path == project_reference_change["ProjectRef"]["path"]
+        end
+      return if !Settings.allow_duplicates && !existing_subproject.nil?
+
       filter_subproject_without_project_references = lambda do |file_reference|
         root_object.project_references.find do |project_reference|
           project_reference.project_ref.uuid == file_reference.uuid
@@ -765,22 +815,22 @@ module Kintsugi
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref = find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        unless adding_files_and_groups_allowed?(change_path)
-          return
+        if find_file_in_group(containing_component, Xcodeproj::Project::PBXFileReference,
+                              change["path"]).nil?
+          raise "File should have been added already, so this is most likely a bug in Kintsugi" \
+            "Change is: #{change}. Change path: #{change_path}"
         end
-
-        file_reference = containing_component.project.new(Xcodeproj::Project::PBXFileReference)
-        containing_component.children << file_reference
-
-        # For some reason, `include_in_index` is set to `1` and `source_tree` to `SDKROOT` by
-        # default.
-        file_reference.include_in_index = nil
-        file_reference.source_tree = nil
-        add_attributes_to_component(file_reference, change, change_path)
       else
         raise MergeError, "Trying to add file reference to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
+    end
+
+    def find_file_in_group(group, instance_type, filepath)
+      group
+        .children
+        .select { |child| child.instance_of?(instance_type) }
+        .find { |file| file.path == filepath }
     end
 
     def adding_files_and_groups_allowed?(change_path)
@@ -789,24 +839,21 @@ module Kintsugi
     end
 
     def add_group(containing_component, change, change_path)
-      unless adding_files_and_groups_allowed?(change_path)
-        return
-      end
-
       case containing_component
       when Xcodeproj::Project::ObjectDictionary
         # It is assumed that an `ObjectDictionary` always represents a project reference.
         new_group = containing_component[:project_ref].project.new(Xcodeproj::Project::PBXGroup)
         containing_component[:product_group] = new_group
+        add_attributes_to_component(new_group, change, change_path)
       when Xcodeproj::Project::PBXGroup
-        new_group = containing_component.project.new(Xcodeproj::Project::PBXGroup)
-        containing_component.children << new_group
+        if find_group_in_group(containing_component, Xcodeproj::Project::PBXGroup, change).nil?
+          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
+            "Change is: #{change}. Change path: #{change_path}"
+        end
       else
         raise MergeError, "Trying to add group to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}"
+          "#{containing_component.isa}. Change is: #{change}. Change path: #{change_path}"
       end
-
-      add_attributes_to_component(new_group, change, change_path)
     end
 
     def add_attributes_to_component(component, change, change_path, ignore_keys: [])

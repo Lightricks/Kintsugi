@@ -6,7 +6,7 @@ module Kintsugi
   # Kintsugi global settings.
   class Settings
     class << self
-      # `true` if Kintsugi can create a component that's identical to an existing one, `false`
+      # `true` if Kintsugi can create entities that are identical to existing ones, `false`
       # otherwise.
       attr_writer :allow_duplicates
 
