@@ -6,6 +6,7 @@ require "xcodeproj"
 
 require_relative "utils"
 require_relative "error"
+require_relative "settings"
 require_relative "xcodeproj_extensions"
 
 module Kintsugi
@@ -281,7 +282,14 @@ module Kintsugi
 
       return added_change if ((old_value || []) - (removed_change || [])).empty?
 
-      (old_value || []) + (added_change || []) - (removed_change || [])
+      new_value = (old_value || []) - (removed_change || [])
+      filtered_added_change = if Settings.allow_duplicates
+                                (added_change || [])
+                              else
+                                (added_change || []).reject { |added| new_value.include?(added) }
+                              end
+
+      new_value + filtered_added_change
     end
 
     def new_string_simple_attribute_value(old_value, removed_change, added_change)
@@ -426,6 +434,10 @@ module Kintsugi
         end
         containing_component.file_ref = file_reference
       when Xcodeproj::Project::PBXGroup
+        return if !Settings.allow_duplicates &&
+          find_file_in_group(containing_component, Xcodeproj::Project::PBXReferenceProxy,
+                             change["path"]) != nil
+
         reference_proxy = containing_component.project.new(Xcodeproj::Project::PBXReferenceProxy)
         containing_component << reference_proxy
         add_attributes_to_component(reference_proxy, change, change_path)
@@ -444,6 +456,10 @@ module Kintsugi
         unless adding_files_and_groups_allowed?(change_path)
           return
         end
+
+        return if !Settings.allow_duplicates &&
+          find_group_in_group(containing_component, Xcodeproj::Project::PBXVariantGroup, change) !=
+          nil
 
         variant_group = containing_component.project.new(Xcodeproj::Project::PBXVariantGroup)
         containing_component.children << variant_group
@@ -505,6 +521,11 @@ module Kintsugi
           "'#{build_phase}'"
         return
       end
+
+      duplicate_build_file_exists = build_phase.files.find do |build_file|
+        build_file.file_ref.path == change["fileRef"]["path"]
+      end != nil
+      return if !Settings.allow_duplicates && duplicate_build_file_exists
 
       build_file = build_phase.project.new(Xcodeproj::Project::PBXBuildFile)
       build_phase.files << build_file
@@ -581,6 +602,13 @@ module Kintsugi
     end
 
     def add_subproject_reference(root_object, project_reference_change, change_path)
+      duplicate_subproject_exists =
+        root_object.project_references.find do |project_reference|
+          project_reference.project_ref.path == project_reference_change["ProjectRef"]["path"]
+        end != nil
+
+      return if !Settings.allow_duplicates && duplicate_subproject_exists
+
       filter_subproject_without_project_references = lambda do |file_reference|
         root_object.project_references.find do |project_reference|
           project_reference.project_ref.uuid == file_reference.uuid
@@ -649,6 +677,10 @@ module Kintsugi
           return
         end
 
+        return if !Settings.allow_duplicates &&
+          find_file_in_group(containing_component, Xcodeproj::Project::PBXFileReference,
+                             change["path"]) != nil
+
         file_reference = containing_component.project.new(Xcodeproj::Project::PBXFileReference)
         containing_component.children << file_reference
 
@@ -661,6 +693,22 @@ module Kintsugi
         raise MergeError, "Trying to add file reference to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
       end
+    end
+
+    def find_file_in_group(group, filetype, filepath)
+      group
+        .children
+        .select { |child| child.instance_of?(filetype) }
+        .find { |file| file.path == filepath }
+    end
+
+    def find_group_in_group(group, filetype, change)
+      group
+        .children
+        .select { |child| child.instance_of?(filetype) }
+        .find do |child_group|
+          child_group.display_name == change["displayName"] && child_group.path == change["path"]
+        end
     end
 
     def adding_files_and_groups_allowed?(change_path)
@@ -679,6 +727,9 @@ module Kintsugi
         new_group = containing_component[:project_ref].project.new(Xcodeproj::Project::PBXGroup)
         containing_component[:product_group] = new_group
       when Xcodeproj::Project::PBXGroup
+        return if !Settings.allow_duplicates &&
+          find_group_in_group(containing_component, Xcodeproj::Project::PBXGroup, change) != nil
+
         new_group = containing_component.project.new(Xcodeproj::Project::PBXGroup)
         containing_component.children << new_group
       else
