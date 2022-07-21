@@ -157,10 +157,43 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "raises when a file is split into two" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.main_group.find_subpath("new_group2", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group = theirs_project.main_group.find_subpath("new_group")
+      file_reference = theirs_project.main_group.find_file_by_path(filepath)
+      file_reference.move(new_group)
+      theirs_project.main_group.find_subpath("new_group2").new_reference(filepath)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
     it "adds file to new group" do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
       theirs_project.main_group.find_subpath("new_group", true).new_reference(filepath)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "removes group" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project["new_group"].remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
@@ -375,6 +408,39 @@ describe Kintsugi, :apply_change_to_project do
 
     before do
       base_project.save
+    end
+
+    it "moves file that is referenced by a target from main group to a new group" do
+      file_reference = base_project.main_group.new_reference("bar")
+      base_project.targets[0].source_build_phase.add_file_reference(file_reference)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group = theirs_project.main_group.find_subpath("new_group", true)
+      file_reference = theirs_project.main_group.find_file_by_path("bar")
+      file_reference.move(new_group)
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "moves file that is referenced by a target from a group to the main group" do
+      file_reference = base_project.main_group.find_subpath("new_group", true).new_reference("bar")
+      base_project.targets[0].source_build_phase.add_file_reference(file_reference)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      file_reference = theirs_project["new_group/bar"]
+      file_reference.move(theirs_project.main_group)
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+      base_project.save
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "changes framework from file reference to reference proxy" do
