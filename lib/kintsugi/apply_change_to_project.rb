@@ -8,6 +8,18 @@ require_relative "utils"
 require_relative "error"
 require_relative "xcodeproj_extensions"
 
+class Array
+  # Converts an array of arrays of size 2 into a multimap, mapping the first element of each
+  # subarray to an array of the last elements it appears with in the same subarray.
+  def to_multi_h
+    raise ArgumentError, "Not all elements are arrays of size 2" unless all? do |arr|
+      arr.is_a?(Array) && arr.count == 2
+    end
+
+    group_by(&:first).transform_values { |group| group.map(&:last) }
+  end
+end
+
 module Kintsugi
   class << self
     # Applies the change specified by `change` to `project`.
@@ -28,8 +40,7 @@ module Kintsugi
         if project.root_object.main_group.nil?
           puts "Warning: Main group doesn't exist, ignoring changes to it."
         else
-          apply_change_to_component(project.root_object, "mainGroup",
-                                    change["rootObject"]["mainGroup"], "rootObject")
+          apply_main_group_change(project, change["rootObject"]["mainGroup"])
         end
       end
 
@@ -46,10 +57,119 @@ module Kintsugi
 
     private
 
+    def apply_main_group_change(project, main_group_change)
+      additions, removals, diffs = classify_group_and_file_changes(main_group_change, "")
+      apply_group_additions(project, additions)
+      apply_file_changes(project, additions, removals)
+      apply_group_and_file_diffs(project, diffs)
+      apply_group_removals(project, removals)
+    end
+
+    def classify_group_and_file_changes(change, path)
+      children_changes = change["children"] || {}
+      removals = flatten_change(children_changes[:removed], path)
+      additions = flatten_change(children_changes[:added], path)
+      diffs = [[change, path]]
+      subchanges_of_change(children_changes).each do |key, subchange|
+        sub_additions, sub_removals, sub_diffs =
+          classify_group_and_file_changes(subchange, join_path(path, key))
+        removals += sub_removals
+        additions += sub_additions
+        diffs += sub_diffs
+      end
+
+      [additions, removals, diffs]
+    end
+
+    def flatten_change(change, path)
+      entries = (change || []).map do |child|
+        [child, path]
+      end
+      group_entries = entries.map do |group, _|
+        next if group["children"].nil?
+
+        flatten_change(group["children"], join_path(path, group["displayName"]))
+      end.compact.flatten(1)
+      entries + group_entries
+    end
+
+    def apply_group_additions(project, additions)
+      additions.each do |change, path|
+        next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
+
+        containing_group = path.empty? ? project.main_group : project[path]
+        new_group = project.new(Module.const_get("Xcodeproj::Project::#{change["isa"]}"))
+        containing_group.children << new_group
+        add_attributes_to_component(new_group, change, path, ignore_keys: ["children"])
+      end
+    end
+
+    def apply_file_changes(project, additions, removals)
+      file_additions = additions.select { |change, _| change["isa"] == "PBXFileReference" }
+      file_removals = removals.select { |change, _| change["isa"] == "PBXFileReference" }
+
+      addition_to_paths = file_additions.to_multi_h
+      removal_to_references = file_removals.to_multi_h.map do |change, paths|
+        references = paths.map do |containing_path|
+          project[join_path(containing_path, change["displayName"])]
+        end
+
+        [change, references]
+      end.to_h
+
+      file_additions.each do |change, path|
+        containing_group = path.empty? ? project.main_group : project[path]
+
+        if (removal_to_references[change] || []).empty?
+          add_file_reference(containing_group, change, "rootObject/mainGroup/#{path}")
+        elsif addition_to_paths[change].length == 1 &&
+            removal_to_references[change].length == 1 && !removal_to_references[change].first.nil?
+          removal_to_references[change].first.move(containing_group)
+        else
+          file_path = join_path(path, change["displayName"])
+          raise MergeError,
+                "Cannot deduce whether the file #{file_path} is new, or was moved to its new place"
+        end
+      end
+
+      file_removals.each do |change, path|
+        next unless addition_to_paths[change].nil?
+
+        file_reference = project[join_path(path, change["displayName"])]
+
+        next if file_reference.nil?
+
+        remove_component(file_reference, change)
+      end
+    end
+
+    def apply_group_and_file_diffs(project, diffs)
+      diffs.each do |change, path|
+        component = project[path]
+
+        next if component.nil?
+
+        change.each do |subchange_name, subchange|
+          next if subchange_name == "children"
+
+          apply_change_to_component(component, subchange_name, subchange, path)
+        end
+      end
+    end
+
+    def apply_group_removals(project, removals)
+      removals.each do |change, path|
+        next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
+
+        group_path = join_path(path, change["displayName"])
+        project[group_path].remove_from_project
+      end
+    end
+
     def apply_change_to_component(parent_component, change_name, change, parent_change_path)
       return if change_name == "displayName"
 
-      change_path = parent_change_path.empty? ? change_name : "#{parent_change_path}/#{change_name}"
+      change_path = join_path(parent_change_path, change_name)
 
       attribute_name = attribute_name_from_change_name(change_name)
       if simple_attribute?(parent_component, attribute_name)
@@ -320,7 +440,7 @@ module Kintsugi
     end
 
     def add_child_to_component(component, change, component_change_path)
-      change_path = "#{component_change_path}/#{change["displayName"]}"
+      change_path = join_path(component_change_path, change["displayName"])
 
       if change["ProjectRef"] && change["ProductGroup"]
         add_subproject_reference(component, change, change_path)
@@ -757,6 +877,10 @@ module Kintsugi
       end
 
       reference_proxies.first
+    end
+
+    def join_path(left, right)
+      left.empty? ? right : "#{left}/#{right}"
     end
   end
 end
