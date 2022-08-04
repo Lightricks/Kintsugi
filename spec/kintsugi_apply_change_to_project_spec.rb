@@ -34,7 +34,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -46,7 +45,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -60,7 +58,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -72,7 +69,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
   end
@@ -90,7 +86,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
   end
@@ -132,7 +127,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -163,7 +157,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -178,7 +171,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -192,7 +184,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -216,7 +207,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -257,7 +247,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -273,7 +262,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -288,25 +276,21 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "handles moved file to an existing group with a different path on filesystem" do
       base_project.main_group.find_subpath("new_group", true).path = "some_path"
-
       base_project.save
+
       theirs_project = create_copy_of_project(base_project.path, "theirs")
-
       new_group = theirs_project.main_group.find_subpath("new_group")
-
       theirs_project.main_group.find_file_by_path(filepath).move(new_group)
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -325,7 +309,6 @@ describe Kintsugi, :apply_change_to_project do
         ours_project_before_applying_changes = create_copy_of_project(ours_project.path, "ours")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expect(ours_project).to be_equivalent_to_project(ours_project_before_applying_changes)
       end
@@ -343,7 +326,6 @@ describe Kintsugi, :apply_change_to_project do
         ours_project_before_applying_changes = create_copy_of_project(ours_project.path, "ours")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expect(ours_project).to be_equivalent_to_project(ours_project_before_applying_changes)
       end
@@ -361,7 +343,6 @@ describe Kintsugi, :apply_change_to_project do
         ours_project_before_applying_changes = create_copy_of_project(ours_project.path, "ours")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expect(ours_project).to be_equivalent_to_project(ours_project_before_applying_changes)
       end
@@ -376,7 +357,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expect(ours_project).to be_equivalent_to_project(theirs_project)
       end
@@ -402,7 +382,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -418,7 +397,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -443,7 +421,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -456,7 +433,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -486,7 +462,6 @@ describe Kintsugi, :apply_change_to_project do
       # hierarchy.
       base_project.files[-1].name = "foo"
       theirs_project.files[-1].name = "foo"
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -513,7 +488,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply["rootObject"].delete("projectReferences")
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -540,7 +514,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -557,7 +530,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
@@ -577,16 +549,13 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
 
     it "adds build file to a file reference that already exists" do
       base_project.main_group.new_reference("bar")
-
       base_project.main_group.new_reference("bar")
-
       base_project.save
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
@@ -600,17 +569,14 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "adds file reference to build file" do
       file_reference = base_project.main_group.new_reference("bar")
-
       build_file = base_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
       build_file.file_ref = nil
-
       base_project.save
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
@@ -621,7 +587,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
@@ -631,7 +596,6 @@ describe Kintsugi, :apply_change_to_project do
       base_project.save
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
-
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       build_file =
         theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
@@ -641,7 +605,6 @@ describe Kintsugi, :apply_change_to_project do
 
       other_project = create_copy_of_project(base_project.path, "other")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -667,7 +630,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
@@ -683,7 +645,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -692,7 +653,6 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {}
         end
-
         theirs_project = create_copy_of_project(base_project.path, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
@@ -705,7 +665,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -723,7 +682,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -747,7 +705,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -764,10 +721,8 @@ describe Kintsugi, :apply_change_to_project do
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
-        ours_project.save
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expected_project = create_copy_of_project(base_project.path, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
@@ -788,10 +743,8 @@ describe Kintsugi, :apply_change_to_project do
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
         end
-        ours_project.save
 
         described_class.apply_change_to_project(ours_project, changes_to_apply)
-        ours_project.save
 
         expected_project = create_copy_of_project(base_project.path, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
@@ -807,10 +760,9 @@ describe Kintsugi, :apply_change_to_project do
             "$(SRCROOT)/../Bar"
           ]
         end
-
         base_project.save
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
         end
@@ -818,7 +770,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -827,10 +778,9 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-
         base_project.save
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings =
             configuration.build_settings.reject { |key, _| key == "HEADER_SEARCH_PATHS" }
@@ -839,7 +789,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -848,8 +797,8 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-
         base_project.save
+
         theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
@@ -858,7 +807,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -868,8 +816,8 @@ describe Kintsugi, :apply_change_to_project do
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
           configuration.build_settings["foo"] = "baz"
         end
-
         base_project.save
+
         theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
@@ -883,7 +831,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -904,7 +851,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -925,7 +871,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -986,10 +931,9 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
         end
-
         base_project.save
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
@@ -997,7 +941,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -1006,10 +949,9 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-
         base_project.save
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+        theirs_project = create_copy_of_project(base_project.path, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[baz foo]
         end
@@ -1017,7 +959,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(theirs_project)
       end
@@ -1044,7 +985,6 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply)
-        base_project.save
 
         expect(base_project).to be_equivalent_to_project(expected_project)
       end
@@ -1108,37 +1048,32 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "adds build phase with a simple attribute value that has non nil default" do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
-
       theirs_project.targets[0].new_shell_script_build_phase("bar")
       theirs_project.targets[0].build_phases.last.shell_script = "Other value"
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "removes build phase" do
       base_project.targets[0].new_shell_script_build_phase("bar")
-
       base_project.save
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
       theirs_project.targets[0].shell_script_build_phases[0].remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -1148,33 +1083,29 @@ describe Kintsugi, :apply_change_to_project do
       file = variant_group.new_reference("Base")
       file.last_known_file_type = "text.plist.strings"
       target.resources_build_phase.add_file_reference(variant_group)
-
       base_project.save
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
       theirs_variant_group = theirs_project.main_group.find_subpath("foo.strings")
       theirs_variant_group.new_reference("en")
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "adds target dependency" do
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
-
       base_project.save
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
       theirs_project.targets[1].add_dependency(theirs_project.targets[0])
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -1183,10 +1114,9 @@ describe Kintsugi, :apply_change_to_project do
       base_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "foo"
       end
-
       base_project.save
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
 
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "bar"
       end
@@ -1194,16 +1124,13 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
     it "adds build settings to new target" do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
-
       theirs_project.new_target("com.apple.product-type.library.static", "bar", :ios)
-
       theirs_project.targets[1].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "baz"
       end
@@ -1211,7 +1138,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
@@ -1220,7 +1146,6 @@ describe Kintsugi, :apply_change_to_project do
       base_project.main_group.new_reference("baz")
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
-
       configuration_reference = theirs_project.main_group.find_subpath("baz")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.base_configuration_reference = configuration_reference
@@ -1229,35 +1154,29 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
-      base_project.save
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
   end
 
   it "adds known regions" do
-    base_project.save
     theirs_project = create_copy_of_project(base_project.path, "theirs")
-
     theirs_project.root_object.known_regions += ["fr"]
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
   it "removes known regions" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
-
     theirs_project.root_object.known_regions = nil
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1271,7 +1190,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1281,14 +1199,12 @@ describe Kintsugi, :apply_change_to_project do
     base_project.save
 
     theirs_project = create_copy_of_project(base_project.path, "theirs")
-
     theirs_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1298,14 +1214,12 @@ describe Kintsugi, :apply_change_to_project do
     base_project.save
 
     theirs_project = create_copy_of_project(base_project.path, "theirs")
-
     theirs_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1316,13 +1230,11 @@ describe Kintsugi, :apply_change_to_project do
     base_project.save
 
     theirs_project = create_copy_of_project(base_project.path, "theirs")
-
     theirs_project.root_object.attributes["TargetAttributes"]["foo"] = {}
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1341,7 +1253,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(ours_project, changes_to_apply)
-    ours_project.save
 
     expect(ours_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1359,7 +1270,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(theirs_project, base_project)
 
     described_class.apply_change_to_project(ours_project, changes_to_apply)
-    ours_project.save
 
     expect(ours_project).to be_equivalent_to_project(theirs_project)
   end
@@ -1387,7 +1297,6 @@ describe Kintsugi, :apply_change_to_project do
     changes_to_apply = get_diff(ours_project, theirs_project)
 
     described_class.apply_change_to_project(base_project, changes_to_apply)
-    base_project.save
 
     expect(base_project).to be_equivalent_to_project(ours_project, ignore_keys: ["containerPortal"])
   end
@@ -1457,7 +1366,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
       other_project = create_copy_of_project(base_project.path, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -1472,7 +1380,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
       other_project = create_copy_of_project(base_project.path, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -1487,7 +1394,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
       other_project = create_copy_of_project(base_project.path, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -1496,7 +1402,6 @@ describe Kintsugi, :apply_change_to_project do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
       subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
-      theirs_project.save
 
       ours_project = create_copy_of_project(base_project.path, "ours")
       add_existing_subproject_to_project(ours_project, subproject, "foo")
@@ -1504,7 +1409,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(ours_project, changes_to_apply)
-      ours_project.save
 
       expect(ours_project.root_object.project_references.count).to equal(1)
     end
@@ -1522,7 +1426,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
       other_project = create_copy_of_project(base_project.path, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -1544,7 +1447,6 @@ describe Kintsugi, :apply_change_to_project do
 
       other_project = create_copy_of_project(base_project.path, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply)
-      other_project.save
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
@@ -1568,7 +1470,6 @@ describe Kintsugi, :apply_change_to_project do
       expected_project = create_copy_of_project(ours_project.path, "expected")
 
       described_class.apply_change_to_project(ours_project, changes_to_apply)
-      ours_project.save
 
       expect(ours_project).to be_equivalent_to_project(expected_project)
     end
@@ -1587,7 +1488,6 @@ describe Kintsugi, :apply_change_to_project do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
 
       subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
-      theirs_project.save
 
       ours_project = create_copy_of_project(base_project.path, "ours")
       add_existing_subproject_to_project(ours_project, subproject, "foo")
@@ -1595,7 +1495,6 @@ describe Kintsugi, :apply_change_to_project do
       changes_to_apply = get_diff(theirs_project, base_project)
 
       described_class.apply_change_to_project(ours_project, changes_to_apply)
-      ours_project.save
 
       expect(ours_project.root_object.project_references[0][:project_ref].uuid)
         .not_to equal(ours_project.root_object.project_references[1][:project_ref].uuid)
