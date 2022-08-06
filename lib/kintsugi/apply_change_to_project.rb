@@ -211,7 +211,7 @@ module Kintsugi
         component = replace_component_with_new_type(parent_component, attribute_name, change)
         change = change_for_component_of_new_type(component, change)
       else
-        component = child_component(parent_component, change_name)
+        component = child_component(parent_component, change, change_name)
 
         if component.nil?
           add_missing_component_if_valid(parent_component, change_name, change, change_path)
@@ -220,7 +220,8 @@ module Kintsugi
       end
 
       (change[:removed] || []).each do |removed_change|
-        child = child_component(component, removed_change["displayName"])
+        child =
+          child_component_of_object_list(component, removed_change, removed_change["displayName"])
         next if child.nil?
 
         remove_component(child, removed_change)
@@ -314,12 +315,20 @@ module Kintsugi
       end
     end
 
-    def child_component(component, change_name)
+    def child_component(component, change, change_name)
       if component.is_a?(Xcodeproj::Project::ObjectList)
-        component.find { |child| child.display_name == change_name }
+        child_component_of_object_list(component, change, change_name)
       else
         attribute_name = attribute_name_from_change_name(change_name)
         component.send(attribute_name)
+      end
+    end
+
+    def child_component_of_object_list(component, change, change_name)
+      if change["isa"] == "PBXReferenceProxy"
+        find_reference_proxy_in_component(component, change["remoteRef"])
+      else
+        component.find { |child| child.display_name == change_name }
       end
     end
 
@@ -454,7 +463,8 @@ module Kintsugi
       if component.to_tree_hash != change
         raise MergeError, "Trying to remove an object that changed since then. This is " \
           "considered a conflict that should be resolved manually. Name of the object is: " \
-          "'#{component.display_name}'"
+          "'#{component.display_name}'. Existing component: #{component.to_tree_hash}. " \
+          "Change: #{change}"
       end
 
       if change["isa"] == "PBXFileReference"
@@ -906,12 +916,9 @@ module Kintsugi
 
     def find_reference_proxy(project, container_item_proxy_change, reference_filter: ->(_) { true })
       reference_proxies = project.root_object.project_references.map do |project_ref_and_products|
-        project_ref_and_products[:product_group].children.find do |product|
-          product.remote_ref.remote_global_id_string ==
-            container_item_proxy_change["remoteGlobalIDString"] &&
-            product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"] &&
-            reference_filter.call(product)
-        end
+        find_reference_proxy_in_component(project_ref_and_products[:product_group].children,
+                                          container_item_proxy_change,
+                                          reference_filter: reference_filter)
       end.compact
 
       if reference_proxies.length > 1
@@ -924,6 +931,16 @@ module Kintsugi
       end
 
       reference_proxies.first
+    end
+
+    def find_reference_proxy_in_component(component, container_item_proxy_change,
+                                          reference_filter: ->(_) { true })
+      component.find do |product|
+        product.remote_ref.remote_global_id_string ==
+          container_item_proxy_change["remoteGlobalIDString"] &&
+          product.remote_ref.remote_info == container_item_proxy_change["remoteInfo"] &&
+          reference_filter.call(product)
+      end
     end
 
     def join_path(left, right)

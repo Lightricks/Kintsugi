@@ -73,6 +73,27 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
   end
 
+  it "removes reference proxy from subproject with the same display name as another reference proxy" do
+    framework_filename = "baz"
+    subproject = add_new_subproject_to_project(base_project, "subproj", framework_filename)
+
+    subproject.new_target("com.apple.product-type.library.static", framework_filename, :ios)
+    base_project.root_object.project_references[0][:product_group] <<
+      create_reference_proxy_from_product_reference(base_project,
+                                                    base_project.root_object.project_references[0][:project_ref],
+                                                    subproject.products_group.files[-1])
+    base_project.save
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.root_object.project_references[0][:product_group].children[-1].remove_from_project
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
   # Checks that the order the changes are applied in is correct.
   it "adds new subproject and reference to its framework" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
