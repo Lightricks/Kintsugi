@@ -210,26 +210,39 @@ module Kintsugi
         change = change_for_component_of_new_type(component, change)
       else
         component = child_component(parent_component, change, change_name)
+      end
 
-        if component.nil?
-          add_missing_component_if_valid(parent_component, change_name, change, change_path)
-          return
+      if change[:removed].is_a?(Hash)
+        remove_component(component, change[:removed])
+      elsif change[:removed].is_a?(Array)
+        unless component.nil?
+          (change[:removed]).each do |removed_change|
+            child = child_component_of_object_list(component, removed_change,
+                                                   removed_change["displayName"])
+            remove_component(child, removed_change)
+          end
         end
+      elsif !change[:removed].nil?
+        raise MergeError, "Unsupported removed change type for #{change[:removed]}"
       end
 
-      (change[:removed] || []).each do |removed_change|
-        child =
-          child_component_of_object_list(component, removed_change, removed_change["displayName"])
-        remove_component(child, removed_change)
-      end
-
-      (change[:added] || []).each do |added_change|
-        is_object_list = component.is_a?(Xcodeproj::Project::ObjectList)
-        add_child_to_component(is_object_list ? parent_component : component, added_change,
-                               change_path)
+      if change[:added].is_a?(Hash)
+        add_child_to_component(parent_component, change[:added], change_path)
+      elsif change[:added].is_a?(Array)
+        (change[:added]).each do |added_change|
+          add_child_to_component(parent_component, added_change, change_path)
+        end
+      elsif !change[:added].nil?
+        raise MergeError, "Unsupported added change type for #{change[:added]}"
       end
 
       subchanges_of_change(change).each do |subchange_name, subchange|
+        if component.nil?
+          raise MergeError, "Trying to apply changes to a component that doesn't exist at path " \
+            "#{change_path}. It was probably removed in a previous commit. This is considered a " \
+            "conflict that should be resolved manually."
+        end
+
         apply_change_to_component(component, subchange_name, subchange, change_path)
       end
     end
@@ -248,16 +261,6 @@ module Kintsugi
       else
         Xcodeproj::Project::Object::CaseConverter.convert_to_ruby(change_name)
       end
-    end
-
-    def add_missing_component_if_valid(parent_component, change_name, change, change_path)
-      if change[:added] && change.compact.count == 1
-        add_child_to_component(parent_component, change[:added], change_path)
-        return
-      end
-
-      puts "Warning: Detected change of an object named '#{change_name}' contained in " \
-        "'#{parent_component}' but the object doesn't exist. Ignoring this change."
     end
 
     def replace_component_with_new_type(parent_component, name_in_parent_component, change)
