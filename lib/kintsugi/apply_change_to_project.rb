@@ -151,9 +151,6 @@ module Kintsugi
         next unless addition_to_paths[change].nil?
 
         file_reference = project[join_path(path, change["displayName"])]
-
-        next if file_reference.nil?
-
         remove_component(file_reference, change)
       end
     end
@@ -192,7 +189,8 @@ module Kintsugi
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
         group_path = join_path(path, change["displayName"])
-        project[group_path].remove_from_project
+
+        remove_component(project[group_path], change)
       end
     end
 
@@ -222,8 +220,6 @@ module Kintsugi
       (change[:removed] || []).each do |removed_change|
         child =
           child_component_of_object_list(component, removed_change, removed_change["displayName"])
-        next if child.nil?
-
         remove_component(child, removed_change)
       end
 
@@ -460,6 +456,8 @@ module Kintsugi
     end
 
     def remove_component(component, change)
+      return if component.nil?
+
       if component.to_tree_hash != change
         raise MergeError, "Trying to remove an object that changed since then. This is " \
           "considered a conflict that should be resolved manually. Name of the object is: " \
