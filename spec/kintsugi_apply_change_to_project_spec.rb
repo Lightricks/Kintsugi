@@ -249,6 +249,22 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "ignores removal of a non-existent group" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.children.delete_at(-1)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.children.delete_at(-1)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "removes build files of a removed file" do
       target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
       target.source_build_phase.add_file_reference(
