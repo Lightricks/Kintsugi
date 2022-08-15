@@ -1357,6 +1357,30 @@ describe Kintsugi, :apply_change_to_project do
     expect(base_project).to be_equivalent_to_project(theirs_project)
   end
 
+  it "adds build configuration list" do
+    base_project.root_object.build_configuration_list = nil
+    base_project.save
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.root_object.build_configuration_list =
+      theirs_project.new(Xcodeproj::Project::XCConfigurationList)
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
+  it "removes build configuration list" do
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.build_configuration_list.remove_from_project
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(base_project, changes_to_apply)
+    expect(base_project).to be_equivalent_to_project(theirs_project)
+  end
+
   it "adds group to product group" do
     base_project_path = make_temp_directory("base", ".xcodeproj")
     base_project = Xcodeproj::Project.new(base_project_path)
