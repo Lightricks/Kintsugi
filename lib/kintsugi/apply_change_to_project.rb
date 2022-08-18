@@ -120,26 +120,34 @@ module Kintsugi
     end
 
     def apply_file_changes(project, additions, removals)
+      def file_reference_key(change)
+        [change["name"], change["path"], change["sourceTree"]]
+      end
+
       file_additions = additions.select { |change, _| change["isa"] == "PBXFileReference" }
       file_removals = removals.select { |change, _| change["isa"] == "PBXFileReference" }
 
-      addition_to_paths = file_additions.to_multi_h
-      removal_to_references = file_removals.to_multi_h.map do |change, paths|
+      addition_keys_to_paths = file_additions
+                               .map { |change, path| [file_reference_key(change), path] }
+                               .to_multi_h
+      removal_keys_to_references = file_removals.to_multi_h.map do |change, paths|
         references = paths.map do |containing_path|
           project[join_path(containing_path, change["displayName"])]
         end
 
-        [change, references]
+        [file_reference_key(change), references]
       end.to_h
 
       file_additions.each do |change, path|
         containing_group = path.empty? ? project.main_group : project[path]
+        change_key = file_reference_key(change)
 
-        if (removal_to_references[change] || []).empty?
+        if (removal_keys_to_references[change_key] || []).empty?
           apply_file_addition(containing_group, change, "rootObject/mainGroup/#{path}")
-        elsif addition_to_paths[change].length == 1 &&
-            removal_to_references[change].length == 1 && !removal_to_references[change].first.nil?
-          removal_to_references[change].first.move(containing_group)
+        elsif addition_keys_to_paths[change_key].length == 1 &&
+            removal_keys_to_references[change_key].length == 1 &&
+            !removal_keys_to_references[change_key].first.nil?
+          removal_keys_to_references[change_key].first.move(containing_group)
         else
           file_path = join_path(path, change["displayName"])
           raise MergeError,
@@ -148,7 +156,7 @@ module Kintsugi
       end
 
       file_removals.each do |change, path|
-        next unless addition_to_paths[change].nil?
+        next unless addition_keys_to_paths[file_reference_key(change)].nil?
 
         file_reference = project[join_path(path, change["displayName"])]
         remove_component(file_reference, change)

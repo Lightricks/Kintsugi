@@ -438,6 +438,23 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "moves file that is referenced by a target and has a different file encoding" do
+      file_reference = base_project.main_group.find_subpath("new_group", true).new_reference("bar")
+      target.frameworks_build_phase.add_file_reference(file_reference)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      file_reference = theirs_project["new_group/bar"]
+      file_reference.move(theirs_project.main_group)
+      file_reference.fileEncoding = "4"
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "changes framework from file reference to reference proxy" do
       framework_filename = "baz"
 
