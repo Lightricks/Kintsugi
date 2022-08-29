@@ -35,6 +35,8 @@ module Kintsugi
     #
     # @return [void]
     def apply_change_to_project(project, change)
+      return unless change&.key?("rootObject")
+
       # We iterate over the main group and project references first because they might create file
       # or project references that are referenced in other parts.
       unless change["rootObject"]["mainGroup"].nil?
