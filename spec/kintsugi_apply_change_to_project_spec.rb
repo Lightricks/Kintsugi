@@ -27,6 +27,13 @@ describe Kintsugi, :apply_change_to_project do
     end
   end
 
+  it "not raises when change is nil or doesn't have root object" do
+    expect {
+      described_class.apply_change_to_project(base_project, nil)
+      described_class.apply_change_to_project(base_project, {})
+    }.not_to raise_error
+  end
+
   it "adds new target" do
     theirs_project = create_copy_of_project(base_project.path, "theirs")
     theirs_project.new_target("com.apple.product-type.library.static", "foo", :ios)
