@@ -195,12 +195,17 @@ module Kintsugi
     end
 
     def apply_group_removals(project, removals)
-      removals.each do |change, path|
+      removals.sort_by(&:last).reverse.each do |change, path|
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
         group_path = join_path(path, change["displayName"])
 
-        remove_component(project[group_path], change)
+        # by now we've deleted all of this group's children in the project, so we need to adapt the
+        # change to the expected current state of the group, that is, without any children.
+        change_without_children = change.dup
+        change_without_children["children"] = []
+
+        remove_component(project[group_path], change_without_children)
       end
     end
 
