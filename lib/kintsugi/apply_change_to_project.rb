@@ -687,7 +687,7 @@ module Kintsugi
       end
 
       existing_build_file = build_phase.files.find do |build_file|
-        build_file.file_ref.path == change["fileRef"]["path"]
+        build_file.file_ref && build_file.file_ref.path == change["fileRef"]["path"]
       end
       return if !Settings.allow_duplicates && !existing_build_file.nil?
 
