@@ -595,6 +595,22 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project, ignore_keys: ["containerPortal"])
     end
 
+    it "adds build when there is a build file without file ref" do
+      target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
+      target.frameworks_build_phase.add_file_reference(nil)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      file_reference = theirs_project.main_group.new_reference("bar")
+      theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      other_project = create_copy_of_project(base_project.path, "theirs")
+      described_class.apply_change_to_project(other_project, changes_to_apply)
+
+      expect(other_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "adds product ref to build file" do
       base_project.main_group.new_reference("bar")
       base_project.save
