@@ -3,6 +3,6 @@
 module Kintsugi
   # This module holds the Kintsugi version information.
   module Version
-    STRING = "0.6.1"
+    STRING = "0.6.2"
   end
 end
