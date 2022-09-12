@@ -203,6 +203,55 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "moves a group with files in it" do
+      new_group = base_project.main_group.find_subpath("new_group", true)
+      new_group.new_reference("new_file")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
+      theirs_project["new_group"].move(new_group2)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "moves a group with a group in it" do
+      new_group = base_project.main_group.find_subpath("new_group", true)
+      new_group.find_subpath("sub_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
+      theirs_project["new_group"].move(new_group2)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "moves a group with a group with a file in it" do
+      new_group = base_project.main_group.find_subpath("new_group", true)
+      sub_group = new_group.find_subpath("sub_group", true)
+      sub_group.new_reference("new_file")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
+      theirs_project["new_group"].move(new_group2)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
     it "adds file with include in index and last known file type as nil" do
       theirs_project = create_copy_of_project(base_project.path, "theirs")
       file_reference = theirs_project.main_group.new_reference("#{filepath}.h")
