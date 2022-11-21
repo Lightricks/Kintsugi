@@ -103,6 +103,12 @@ module Kintsugi
         group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
         containing_group = path.empty? ? project.main_group : project[path]
 
+        if containing_group.nil?
+          raise MergeError, "Trying to add or move a group with change #{change} to a group that " \
+            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
+            "resolved manually."
+        end
+
         next if !Settings.allow_duplicates &&
           !find_group_in_group(containing_group, group_type, change).nil?
 
@@ -143,6 +149,12 @@ module Kintsugi
       file_additions.each do |change, path|
         containing_group = path.empty? ? project.main_group : project[path]
         change_key = file_reference_key(change)
+
+        if containing_group.nil?
+          raise MergeError, "Trying to add or move a file with change #{change} to a group that " \
+            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
+            "resolved manually."
+        end
 
         if (removal_keys_to_references[change_key] || []).empty?
           apply_file_addition(containing_group, change, "rootObject/mainGroup/#{path}")
