@@ -159,6 +159,59 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "raises if trying to move file to another group that no longer exists" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      new_group = theirs_project.main_group.find_subpath("new_group")
+      file_reference = theirs_project.main_group.find_file_by_path(filepath)
+      file_reference.move(new_group)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.find_subpath("new_group").remove_from_project
+
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
+    it "raises if trying to add file to a group that no longer exists" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.find_subpath("new_group").new_reference("foo")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.find_subpath("new_group").remove_from_project
+
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
+    it "does nothing if trying to remove a file from a group that no longer exists" do
+      base_project.main_group.find_subpath("new_group", true).new_reference("foo")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project.main_group.find_subpath("new_group/foo").remove_from_project
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.find_subpath("new_group").remove_from_project
+
+      base_project.save
+      expected_project = create_copy_of_project(base_project.path, "expected")
+
+      described_class.apply_change_to_project(base_project, changes_to_apply)
+
+      expect(base_project).to be_equivalent_to_project(expected_project)
+    end
+
     it "raises when a file is split into two" do
       base_project.main_group.find_subpath("new_group", true)
       base_project.main_group.find_subpath("new_group2", true)
@@ -217,6 +270,39 @@ describe Kintsugi, :apply_change_to_project do
       described_class.apply_change_to_project(base_project, changes_to_apply)
 
       expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "raises when trying to add a group to a group that no longer exists" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project["new_group"].find_subpath("sub_group", true)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.find_subpath("new_group").remove_from_project
+
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
+    it "raises when trying to move a group to a group that no longer exists" do
+      base_project.main_group.find_subpath("new_group", true)
+      base_project.main_group.find_subpath("other_group", true)
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project["other_group"].move(theirs_project["new_group"])
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      base_project.main_group.find_subpath("new_group").remove_from_project
+
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply)
+      }.to raise_error(Kintsugi::MergeError)
     end
 
     it "moves a group with a group in it" do
