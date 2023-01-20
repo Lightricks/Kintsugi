@@ -34,7 +34,7 @@ module Kintsugi
     #         `:added` and `:removed` respectively.
     #
     # @return [void]
-    def apply_change_to_project(project, change)
+    def apply_change_to_project(project, change, base_project)
       return unless change&.key?("rootObject")
 
       # We iterate over the main group and project references first because they might create file
@@ -101,7 +101,7 @@ module Kintsugi
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
         group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
-        containing_group = path.empty? ? project.main_group : project[path]
+        containing_group = project.group_from_path(path)
 
         if containing_group.nil?
           raise MergeError, "Trying to add or move a group with change #{change} to a group that " \
@@ -147,7 +147,7 @@ module Kintsugi
       end.to_h
 
       file_additions.each do |change, path|
-        containing_group = path.empty? ? project.main_group : project[path]
+        containing_group = project.group_from_path(path)
         change_key = file_reference_key(change)
 
         if containing_group.nil?

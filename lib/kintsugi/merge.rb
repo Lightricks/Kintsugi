@@ -42,7 +42,7 @@ module Kintsugi
         File.write(changes_output_path, JSON.pretty_generate(change))
       end
 
-      apply_change_and_copy_to_original_path(ours_project, change, project_file_path)
+      apply_change_and_copy_to_original_path(ours_project, change, project_file_path, base_project)
     end
 
     # Merges the changes done between `theirs_project_path` and `base_project_path` to the file at
@@ -82,15 +82,17 @@ module Kintsugi
         Xcodeproj::Differ.project_diff(theirs_temporary_project, base_temporary_project,
                                        :added, :removed)
 
-      apply_change_and_copy_to_original_path(ours_temporary_project, change, ours_project_path)
+      apply_change_and_copy_to_original_path(ours_temporary_project, change, ours_project_path,
+                                             base_temporary_project)
     end
 
     private
 
     PROJECT_FILE_NAME = "project.pbxproj"
 
-    def apply_change_and_copy_to_original_path(project, change, original_project_file_path)
-      apply_change_to_project(project, change)
+    def apply_change_and_copy_to_original_path(project, change, original_project_file_path,
+                                               base_project)
+      apply_change_to_project(project, change, base_project)
       project.save
       FileUtils.cp(File.join(project.path, PROJECT_FILE_NAME), original_project_file_path)
     end
