@@ -255,6 +255,7 @@ module Kintsugi
 
       if change[:added].is_a?(Hash)
         add_child_to_component(parent_component, change[:added], change_path)
+        component = child_component(parent_component, change[:added], change_name)
       elsif change[:added].is_a?(Array)
         (change[:added]).each do |added_change|
           add_child_to_component(parent_component, added_change, change_path)
