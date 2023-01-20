@@ -118,8 +118,9 @@ shared_examples "tests" do |git_command, project_name|
 
       `git -C #{git_directory_path} #{git_command} #{first_commit_hash} &> /dev/null`
 
+      arguments = [File.join(project.path, "project.pbxproj"), "--interactive-resolution", "false"]
       expect {
-        Kintsugi.run([File.join(project.path, "project.pbxproj")])
+        Kintsugi.run(arguments)
       }.to raise_error(Kintsugi::MergeError)
       expect(`git -C #{git_directory_path} diff --name-only --diff-filter=U`.chomp)
         .to eq("#{project_name}/project.pbxproj")

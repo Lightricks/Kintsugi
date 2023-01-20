@@ -38,6 +38,14 @@ When there's a `.pbxproj` file with Git conflicts, and a 3-way merge is possible
 
 And see the magic happen! :sparkles:
 
+### Interactive conflict resolution
+
+In case Kintsugi cannot resolve a conflict on its own, it will display a helpful message describing the conflict and choices to resolve it:
+
+<img src="./assets/interactive-conflict-resolution.png" alt="Interactive conflict resolution"/>
+
+This feature can be disabled by passing the `--interactive-resolution false` flag.
+
 ### Git merge driver
 
 You can setup Kintsugi to automatically resolve conflicts that occur in `pbxproj` files when such conflicts occur.
@@ -45,6 +53,8 @@ You can setup Kintsugi to automatically resolve conflicts that occur in `pbxproj
 #### Automatic install
 
 Run `kintsugi install-driver`. This will install Kintsugi as a merge driver globally. Note that Kintsugi needs to be in your `PATH`.
+
+- Note: You can pass arguments to this command which will then be passed on to Kintsugi when it's executed as a merge driver. For example, you can pass `--interactive-resolution false` to disable interactive conflict resolution.
 
 ❗ Do not install with bundler because the installation might succeed even if Kintsugi is not in `PATH`.
 

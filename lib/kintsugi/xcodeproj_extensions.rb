@@ -6,6 +6,16 @@ require "xcodeproj"
 
 module Xcodeproj
   class Project
+    # Returns the group found at `path`. If `path` is empty returns the main group. Returns `nil` if
+    # the group at path was not found.
+    #
+    # @param  [String] Path to the group.
+    #
+    # @return [PBXGroup/PBXVariantGroup/PBXFileReference]
+    def group_or_file_at_path(path)
+      path.empty? ? self.main_group : self[path]
+    end
+
     # Extends `ObjectDictionary` to act like an `Object` if `self` repreresents a project reference.
     class ObjectDictionary
       @@old_to_tree_hash = instance_method(:to_tree_hash)
@@ -167,7 +177,6 @@ module Xcodeproj
     #         Second array to the difference operation.
     #
     # @return [Array]
-    #
     def self.array_non_unique_diff(value_1, value_2)
       value_2_elements_by_count = value_2.reduce({}) do |hash, element|
         updated_element_hash = hash.key?(element) ? {element => hash[element] + 1} : {element => 1}

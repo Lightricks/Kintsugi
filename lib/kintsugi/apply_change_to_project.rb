@@ -4,10 +4,11 @@
 
 require "xcodeproj"
 
-require_relative "utils"
+require_relative "conflict_resolver"
 require_relative "error"
 require_relative "settings"
 require_relative "xcodeproj_extensions"
+require_relative "utils"
 
 class Array
   # Converts an array of arrays of size 2 into a multimap, mapping the first element of each
@@ -33,9 +34,17 @@ module Kintsugi
     #         Xcodeproj::Differ#project_diff where its `key_1` and `key_2` parameters have values of
     #         `:added` and `:removed` respectively.
     #
+    # @param  [Xcodeproj::Project] change_source_project
+    #         Project from which `change` to apply was created. Used for providing information about
+    #         components that are no longer available in `project`.
+
     # @return [void]
-    def apply_change_to_project(project, change)
+    def apply_change_to_project(project, change, change_source_project)
       return unless change&.key?("rootObject")
+
+      @change_source_project = change_source_project
+      @ignored_components_group_paths = []
+      @created_components_group_paths = []
 
       # We iterate over the main group and project references first because they might create file
       # or project references that are referenced in other parts.
@@ -96,17 +105,23 @@ module Kintsugi
       entries + group_entries
     end
 
-    def apply_group_additions(project, additions)
+    def apply_group_additions(project, additions, force_create_containing_group: false)
       additions.each do |change, path|
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
         group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
-        containing_group = path.empty? ? project.main_group : project[path]
+        containing_group = project.group_or_file_at_path(path)
 
         if containing_group.nil?
-          raise MergeError, "Trying to add or move a group with change #{change} to a group that " \
-            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
-            "resolved manually."
+          display_name = change["displayName"]
+          if !force_create_containing_group &&
+              !ConflictResolver.create_nonexistent_group_when_adding_subgroup?(path, display_name)
+            @ignored_components_group_paths.append(join_path(path, display_name))
+            next
+          end
+
+          @created_components_group_paths.append(join_path(path, display_name))
+          containing_group = create_nonexistent_groupable_component(project, path)
         end
 
         next if !Settings.allow_duplicates &&
@@ -127,7 +142,7 @@ module Kintsugi
         end
     end
 
-    def apply_file_changes(project, additions, removals)
+    def apply_file_changes(project, additions, removals, force_create_containing_group: false)
       def file_reference_key(change)
         [change["name"], change["path"], change["sourceTree"]]
       end
@@ -147,13 +162,19 @@ module Kintsugi
       end.to_h
 
       file_additions.each do |change, path|
-        containing_group = path.empty? ? project.main_group : project[path]
+        containing_group = project.group_or_file_at_path(path)
         change_key = file_reference_key(change)
 
         if containing_group.nil?
-          raise MergeError, "Trying to add or move a file with change #{change} to a group that " \
-            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
-            "resolved manually."
+          if !force_create_containing_group &&
+              !ConflictResolver.create_nonexistent_group_when_adding_file?(path,
+                                                                           change["displayName"])
+            @ignored_components_group_paths.append(join_path(path, change["displayName"]))
+            next
+          end
+
+          @created_components_group_paths.append(join_path(path, change["displayName"]))
+          containing_group = create_nonexistent_groupable_component(project, path)
         end
 
         if (removal_keys_to_references[change_key] || []).empty?
@@ -194,9 +215,17 @@ module Kintsugi
 
     def apply_group_and_file_diffs(project, diffs)
       diffs.each do |change, path|
-        component = project[path]
+        component = project.group_or_file_at_path(path)
 
-        next if component.nil?
+        if component.nil? && change&.keys != ["children"]
+          unless ConflictResolver.create_nonexistent_component_when_changing_it?(path)
+            @ignored_components_group_paths.append(path)
+            next
+          end
+
+          @created_components_group_paths.append(path)
+          component = create_nonexistent_groupable_component(project, path)
+        end
 
         change.each do |subchange_name, subchange|
           next if subchange_name == "children"
@@ -204,6 +233,25 @@ module Kintsugi
           apply_change_to_component(component, subchange_name, subchange, path)
         end
       end
+    end
+
+    def create_nonexistent_groupable_component(project, path)
+      source_project_component = @change_source_project.group_or_file_at_path(path)
+      component_change = source_project_component.to_tree_hash
+      containing_group_path = parent_group_path(path)
+
+      case source_project_component
+      when Xcodeproj::Project::PBXFileReference
+        apply_file_changes(project, [[component_change, containing_group_path]], [],
+                           force_create_containing_group: true)
+      when Xcodeproj::Project::PBXGroup
+        apply_group_additions(project, [[component_change, containing_group_path]],
+                              force_create_containing_group: true)
+      else
+        raise MergeError, "Component should either be a group or a file reference. " \
+                          "Instead got: #{source_project_component}"
+      end
+      project.group_or_file_at_path(path)
     end
 
     def apply_group_removals(project, removals)
@@ -265,13 +313,56 @@ module Kintsugi
 
       subchanges_of_change(change).each do |subchange_name, subchange|
         if component.nil?
-          raise MergeError, "Trying to apply changes to a component that doesn't exist at path " \
-            "#{change_path}. It was probably removed in a previous commit. This is considered a " \
-            "conflict that should be resolved manually."
+          component = resolve_nonexistent_component(parent_component, change_path)
+          break if component.nil?
         end
 
         apply_change_to_component(component, subchange_name, subchange, change_path)
       end
+    end
+
+    def resolve_nonexistent_component(parent_component, change_path)
+      source_project_component = component_at_path(@change_source_project, change_path)
+      group_path = group_path_of_group_based_component(source_project_component)
+
+      if group_path
+        should_create_component = @created_components_group_paths.include?(group_path) ||
+          (!@ignored_components_group_paths.include?(group_path) &&
+          !ConflictResolver.create_nonexistent_component_when_changing_it?(change_path))
+        return unless should_create_component
+      elsif !ConflictResolver.create_nonexistent_component_when_changing_it?(change_path)
+        return
+      end
+
+      non_object_list_parent =
+        if parent_component.is_a?(Xcodeproj::Project::ObjectList)
+          parent_component.owner
+        else
+          parent_component
+        end
+      add_child_to_component(non_object_list_parent, source_project_component.to_tree_hash,
+                             change_path)
+      component_at_path(non_object_list_parent.project, change_path)
+    end
+
+    def group_path_of_group_based_component(component)
+      if component.is_a?(Xcodeproj::Project::PBXBuildFile) && !component.file_ref.nil?
+        component.file_ref.hierarchy_path.delete_prefix("/")
+      elsif component.is_a?(Xcodeproj::Project::PBXFileReference) ||
+          component.is_a?(Xcodeproj::Project::PBXGroup)
+        component.hierarchy_path.delete_prefix("/")
+      end
+    end
+
+    def component_at_path(project, path)
+      current_component = project
+      until path["/"].nil?
+        change_name = path.split("/")[0]
+        current_component = child_component(current_component, change_name)
+        path = path.delete_prefix("#{change_name}/")
+      end
+
+      child_component(current_component, path)
     end
 
     def subchanges_of_change(change)
@@ -362,18 +453,20 @@ module Kintsugi
 
     def apply_change_to_simple_attribute(component, attribute_name, change)
       new_attribute_value =
-        simple_attribute_value_with_change(component.send(attribute_name), change)
+        simple_attribute_value_with_change(component.send(attribute_name), change, attribute_name)
       component.send("#{attribute_name}=", new_attribute_value)
     end
 
-    def simple_attribute_value_with_change(old_value, change)
+    def simple_attribute_value_with_change(old_value, change, attribute_name)
       type = simple_attribute_type(old_value, change[:removed], change[:added])
-      new_value = new_simple_attribute_value(type, old_value, change[:removed], change[:added])
+      new_value = new_simple_attribute_value(type, old_value, change[:removed], change[:added],
+                                             attribute_name)
 
       subchanges_of_change(change).each do |subchange_name, subchange_value|
         new_value = new_value || old_value || {}
         new_value[subchange_name] =
-          simple_attribute_value_with_change(old_value[subchange_name], subchange_value)
+          simple_attribute_value_with_change(old_value[subchange_name], subchange_value,
+                                             subchange_name)
       end
 
       new_value
@@ -385,71 +478,87 @@ module Kintsugi
       if types.include?(Hash)
         unless types.to_set.subset?([Hash, NilClass].to_set)
           raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
-            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
-            "'#{added_change}'"
+                            "value: '#{old_value}', removed change: '#{removed_change}', added " \
+                            "change: '#{added_change}'"
         end
         Hash
       elsif types.include?(Array)
         unless types.to_set.subset?([Array, String, NilClass].to_set)
           raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
-            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
-            "'#{added_change}'"
+                            "value: '#{old_value}', removed change: '#{removed_change}', added " \
+                            "change: '#{added_change}'"
         end
         Array
       elsif types.include?(String)
         unless types.to_set.subset?([String, NilClass].to_set)
           raise MergeError, "Cannot apply changes because the types are not compatible. Existing " \
-            "value: '#{old_value}', removed change: '#{removed_change}', added change: " \
-            "'#{added_change}'"
+                            "value: '#{old_value}', removed change: '#{removed_change}', added " \
+                            "change: '#{added_change}'"
         end
         String
       else
         raise MergeError, "Unsupported types of all of the values. Existing value: " \
-          "'#{old_value}', removed change: '#{removed_change}', added change: '#{added_change}'"
+                          "'#{old_value}', removed change: '#{removed_change}', added change: " \
+                          "'#{added_change}'"
       end
     end
 
-    def new_simple_attribute_value(type, old_value, removed_change, added_change)
+    def new_simple_attribute_value(type, old_value, removed_change, added_change, attribute_name)
       if type == Hash
-        new_hash_simple_attribute_value(old_value, removed_change, added_change)
+        new_hash_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       elsif type == Array
-        new_array_simple_attribute_value(old_value, removed_change, added_change)
+        new_array_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       elsif type == String
-        new_string_simple_attribute_value(old_value, removed_change, added_change)
+        new_string_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       else
         raise MergeError, "Unsupported types of all of the values. Existing value: " \
-          "'#{old_value}', removed change: '#{removed_change}', added change: '#{added_change}'"
+                          "'#{old_value}', removed change: '#{removed_change}', added change: " \
+                          "'#{added_change}'"
       end
     end
 
-    def new_hash_simple_attribute_value(old_value, removed_change, added_change)
+    def new_hash_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       return added_change if ((old_value || {}).to_a - (removed_change || {}).to_a).empty?
 
       # First apply the added change to see if there are any conflicts with it.
       new_value = (old_value || {}).merge(added_change || {})
+      conflicting_added_hash_values = (old_value.to_a - new_value.to_a)
 
-      unless (old_value.to_a - new_value.to_a).empty?
-        raise MergeError, "New hash #{change} contains values that conflict with old hash " \
-          "#{old_value}"
+      unless conflicting_added_hash_values.empty?
+        override_values = ConflictResolver.override_values_when_keys_already_exist_in_hash?(
+          attribute_name, old_value, added_change
+        )
+        new_value = override_values ? old_value.merge(added_change) : added_change.merge(old_value)
       end
 
       if removed_change.nil?
         return new_value
       end
 
+      conflicting_removal_hash_values = new_value.select do |key, value|
+        value != removed_change[key] && value != (added_change || {})[key]
+      end
+
+      unless conflicting_removal_hash_values.empty?
+        expected_values =
+          removed_change.select { |key, value| conflicting_removal_hash_values.key?(key) }
+        should_remove_conflicting_values =
+          ConflictResolver.remove_entries_when_unexpected_values_in_hash?(
+            attribute_name, expected_values, conflicting_removal_hash_values
+          )
+      end
+
       new_value
         .reject do |key, value|
-          if value != removed_change[key] && value != (added_change || {})[key]
-            raise MergeError, "Trying to remove value '#{removed_change[key]}' of hash with key " \
-              "'#{key}' but it changed to #{value}. This is considered a conflict that should be " \
-              "resolved manually."
+          if conflicting_removal_hash_values.key?(key)
+            next should_remove_conflicting_values
           end
 
           removed_change.key?(key)
         end
     end
 
-    def new_array_simple_attribute_value(old_value, removed_change, added_change)
+    def new_array_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       if old_value.is_a?(String)
         old_value = [old_value]
       end
@@ -472,10 +581,12 @@ module Kintsugi
       new_value + filtered_added_change
     end
 
-    def new_string_simple_attribute_value(old_value, removed_change, added_change)
+    def new_string_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       if old_value != removed_change && !old_value.nil? && added_change != old_value
-        raise MergeError, "Trying to remove value '#{removed_change || "nil"}', but the existing " \
-          "value is '#{old_value}'. This is considered a conflict that should be resolved manually."
+        use_added_change = ConflictResolver.set_value_to_string_when_unxpected_value?(
+          attribute_name, added_change, removed_change, old_value
+        )
+        return use_added_change ? added_change : old_value
       end
 
       added_change
@@ -484,22 +595,20 @@ module Kintsugi
     def remove_component(component, change)
       return if component.nil?
 
-      if component.to_tree_hash != change
-        raise MergeError, "Trying to remove an object that changed since then. This is " \
-          "considered a conflict that should be resolved manually. Name of the object is: " \
-          "'#{component.display_name}'. Existing component: #{component.to_tree_hash}. " \
-          "Change: #{change}"
+      if component.to_tree_hash != change &&
+          !ConflictResolver.remove_component_when_unexpected_hash?(component, change)
+        return
       end
 
       if change["isa"] == "PBXFileReference" || change["isa"] == "PBXReferenceProxy" ||
           change["isa"] == "PBXGroup" || change["isa"] == "PBXVariantGroup"
-        remove_build_files_of_file_reference(component, change)
+        remove_build_files_of_file_reference(component)
       end
 
       component.remove_from_project
     end
 
-    def remove_build_files_of_file_reference(file_reference, change)
+    def remove_build_files_of_file_reference(file_reference)
       # Since the build file's display name depends on the file reference, removing the file
       # reference before removing it will change the build file's display name which will not be
       # detected when trying to remove the build file. Therefore, the build files that depend on
@@ -562,7 +671,7 @@ module Kintsugi
         add_remote_swift_package_reference(component, change, change_path)
       else
         raise MergeError, "Trying to add unsupported component type #{change["isa"]}. Full " \
-          "component change is: #{change}"
+                          "component change is: #{change}"
       end
     end
 
@@ -578,7 +687,7 @@ module Kintsugi
         containing_component.package_references << remote_swift_package_reference
       else
         raise MergeError, "Trying to add remote swift package reference to an unsupported " \
-          "component type #{containing_component.isa}. Change is: #{change}"
+                          "component type #{containing_component.isa}. Change is: #{change}"
       end
     end
 
@@ -594,7 +703,7 @@ module Kintsugi
         containing_component.package_product_dependencies << swift_package_product_dependency
       else
         raise MergeError, "Trying to add swift package product dependency to an unsupported " \
-          "component type #{containing_component.isa}. Change is: #{change}"
+                          "component type #{containing_component.isa}. Change is: #{change}"
       end
     end
 
@@ -627,7 +736,7 @@ module Kintsugi
         add_attributes_to_component(reference_proxy, change, change_path)
       else
         raise MergeError, "Trying to add reference proxy to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}"
+                          "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
@@ -636,15 +745,11 @@ module Kintsugi
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref =
           find_variant_group(containing_component.project, change["displayName"])
-      when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        if find_group_in_group(containing_component, Xcodeproj::Project::PBXVariantGroup,
-                               change).nil?
-          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+      when Xcodeproj::Project::PBXGroup
+        # Adding variant groups to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add variant group to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}"
+                          "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
@@ -696,7 +801,7 @@ module Kintsugi
     def add_build_file(build_phase, change, change_path)
       if change["fileRef"].nil?
         puts "Warning: Trying to add a build file without any file reference to build phase " \
-          "'#{build_phase}'"
+             "'#{build_phase}'"
         return
       end
 
@@ -745,7 +850,7 @@ module Kintsugi
         component.remote_ref = container_proxy
       else
         raise MergeError, "Trying to add container item proxy to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}"
+                          "#{containing_component.isa}. Change is: #{change}"
       end
       add_attributes_to_component(container_proxy, change, change_path,
                                   ignore_keys: ["containerPortal"])
@@ -769,10 +874,10 @@ module Kintsugi
 
       if container_item_proxies.length > 1
         puts "Debug: Found more than one potential dependency with name " \
-          "'#{container_item_proxy_change["remoteInfo"]}'. Using the first one."
+             "'#{container_item_proxy_change["remoteInfo"]}'. Using the first one."
       elsif container_item_proxies.empty?
         puts "Warning: No container portal was found for dependency with name " \
-          "'#{container_item_proxy_change["remoteInfo"]}'."
+             "'#{container_item_proxy_change["remoteInfo"]}'."
         return
       end
 
@@ -797,8 +902,8 @@ module Kintsugi
 
       unless subproject_reference
         raise MergeError, "No file reference was found for project reference with change " \
-          "#{project_reference_change}. This might mean that the file used to exist in the " \
-          "project the but was removed at some point"
+                          "#{project_reference_change}. This might mean that the file used to " \
+                          "exist in the project the but was removed at some point"
       end
 
       attribute =
@@ -838,8 +943,6 @@ module Kintsugi
     def add_file_reference(containing_component, change, change_path)
       # base configuration reference and product reference always reference a file that exists
       # inside a group, therefore in these cases the file is searched for.
-      # In the case of group and variant group, the file can't exist in another group, therefore a
-      # new file reference is always created.
       case containing_component
       when Xcodeproj::Project::XCBuildConfiguration
         containing_component.base_configuration_reference =
@@ -849,15 +952,11 @@ module Kintsugi
           find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref = find_file(containing_component.project, change["path"])
-      when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        if find_file_in_group(containing_component, Xcodeproj::Project::PBXFileReference,
-                              change["path"]).nil?
-          raise "File should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+      when Xcodeproj::Project::PBXGroup
+        # Adding files to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add file reference to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}"
+                          "#{containing_component.isa}. Change is: #{change}"
       end
     end
 
@@ -868,11 +967,6 @@ module Kintsugi
         .find { |file| file.path == filepath }
     end
 
-    def adding_files_and_groups_allowed?(change_path)
-      change_path.start_with?("rootObject/mainGroup") ||
-        change_path.start_with?("rootObject/projectReferences")
-    end
-
     def add_group(containing_component, change, change_path)
       case containing_component
       when Xcodeproj::Project::ObjectDictionary
@@ -881,13 +975,11 @@ module Kintsugi
         containing_component[:product_group] = new_group
         add_attributes_to_component(new_group, change, change_path)
       when Xcodeproj::Project::PBXGroup
-        if find_group_in_group(containing_component, Xcodeproj::Project::PBXGroup, change).nil?
-          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+        # Adding groups to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add group to an unsupported component type " \
-          "#{containing_component.isa}. Change is: #{change}. Change path: #{change_path}"
+                          "#{containing_component.isa}. Change is: #{change}. Change path: " \
+                          "#{change_path}"
       end
     end
 
@@ -914,7 +1006,7 @@ module Kintsugi
           end
         else
           raise MergeError, "Trying to add attribute of unsupported type '#{change_value.class}' " \
-            "to object #{component}. Attribute name is '#{change_name}'"
+                            "to object #{component}. Attribute name is '#{change_name}'"
         end
       end
     end
@@ -932,7 +1024,6 @@ module Kintsugi
       if file_references.length > 1
         puts "Debug: Found more than one matching file with path '#{path}'. Using the first one."
       elsif file_references.empty?
-        puts "Debug: No file reference found for file with path '#{path}'."
         return
       end
 
@@ -949,10 +1040,9 @@ module Kintsugi
 
       if reference_proxies.length > 1
         puts "Debug: Found more than one matching reference proxy with name " \
-          "'#{container_item_proxy_change["remoteInfo"]}'. Using the first one."
+             "'#{change["remoteInfo"]}'. Using the first one."
       elsif reference_proxies.empty?
-        puts "Warning: No reference proxy was found for name " \
-          "'#{container_item_proxy_change["remoteInfo"]}'."
+        puts "Warning: No reference proxy was found for name '#{change["remoteInfo"]}'."
         return
       end
 
@@ -961,6 +1051,10 @@ module Kintsugi
 
     def join_path(left, right)
       left.empty? ? right : "#{left}/#{right}"
+    end
+
+    def parent_group_path(group_path)
+      group_path[/(.*)\//, 1] || ""
     end
   end
 end
