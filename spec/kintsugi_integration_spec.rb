@@ -119,6 +119,7 @@ shared_examples "tests" do |git_command, project_name|
       `git -C #{git_directory_path} #{git_command} #{first_commit_hash} &> /dev/null`
 
       expect {
+        # TODO: Why is interactive resolution disabled here?
         Kintsugi.run([File.join(project.path, "project.pbxproj")])
       }.to raise_error(Kintsugi::MergeError)
       expect(`git -C #{git_directory_path} diff --name-only --diff-filter=U`.chomp)

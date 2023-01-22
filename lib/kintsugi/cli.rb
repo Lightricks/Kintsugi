@@ -185,6 +185,9 @@ module Kintsugi
 
         opts.on("--allow-duplicates", "Allow to add duplicates of the same entity")
 
+        opts.on("--interactive-resolution", "In case a conflict that requires human decision to " \
+          "resolve, shows an interactive prompt with choices to resolve it")
+
         opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
       end
 
@@ -197,6 +200,10 @@ module Kintsugi
 
         if options[:"allow-duplicates"]
           Settings.allow_duplicates = true
+        end
+
+        if options[:"interactive-resolution"]
+          Settings.interactive_resolution = options[:"interactive-resolution"]
         end
 
         project_file_path = File.expand_path(arguments[0])

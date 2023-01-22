@@ -3,6 +3,7 @@
 # frozen_string_literal: true
 
 require "xcodeproj"
+require "tty-prompt"
 
 require_relative "utils"
 require_relative "error"
@@ -33,14 +34,19 @@ module Kintsugi
     #         Xcodeproj::Differ#project_diff where its `key_1` and `key_2` parameters have values of
     #         `:added` and `:removed` respectively.
     #
+    # @param  [Xcodeproj::Project] change_source_project
+
     # @return [void]
-    def apply_change_to_project(project, change, base_project)
+    def apply_change_to_project(project, change, change_source_project)
       return unless change&.key?("rootObject")
+
+      @change_source_project = change_source_project
 
       # We iterate over the main group and project references first because they might create file
       # or project references that are referenced in other parts.
       unless change["rootObject"]["mainGroup"].nil?
         if project.root_object.main_group.nil?
+          # TODO: resolve conflicts?
           puts "Warning: Main group doesn't exist, ignoring changes to it."
         else
           apply_main_group_change(project, change["rootObject"]["mainGroup"])
@@ -52,9 +58,11 @@ module Kintsugi
                                   change["rootObject"]["projectReferences"], "rootObject")
       end
 
+      # TODO: It seems that handling `productRefGroup` is not needed because it is always reflected
+      # in changes on the main group. Also it requires more conflict resolution in the tests.
       apply_change_to_component(project, "rootObject",
                                 change["rootObject"].reject { |key|
-                                  %w[mainGroup projectReferences].include?(key)
+                                  %w[mainGroup projectReferences productRefGroup].include?(key)
                                 }, "")
     end
 
@@ -96,7 +104,7 @@ module Kintsugi
       entries + group_entries
     end
 
-    def apply_group_additions(project, additions)
+    def apply_group_additions(project, additions, force_create_containing_group: false)
       additions.each do |change, path|
         next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
 
@@ -104,9 +112,10 @@ module Kintsugi
         containing_group = project.group_at_path(path)
 
         if containing_group.nil?
-          raise MergeError, "Trying to add or move a group with change #{change} to a group that " \
-            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
-            "resolved manually."
+          next if !force_create_containing_group &&
+            !ConflictResolver.adding_group_to_nonexistent_group(path, change["displayName"])
+
+          containing_group = create_non_existent_containing_group(project, change, path)
         end
 
         next if !Settings.allow_duplicates &&
@@ -118,6 +127,16 @@ module Kintsugi
       end
     end
 
+    def create_non_existent_containing_group(project, change, path)
+      source_project_containing_group = @change_source_project.group_at_path(path)
+      containing_group_additions = [
+        [source_project_containing_group.to_tree_hash, parent_group_path(path)]
+      ]
+      apply_group_additions(project, containing_group_additions,
+                            force_create_containing_group: true)
+      project.group_at_path(path)
+    end
+
     def find_group_in_group(group, instance_type, change)
       group
         .children
@@ -127,7 +146,7 @@ module Kintsugi
         end
     end
 
-    def apply_file_changes(project, additions, removals)
+    def apply_file_changes(project, additions, removals, force_create_containing_group: false)
       def file_reference_key(change)
         [change["name"], change["path"], change["sourceTree"]]
       end
@@ -151,9 +170,10 @@ module Kintsugi
         change_key = file_reference_key(change)
 
         if containing_group.nil?
-          raise MergeError, "Trying to add or move a file with change #{change} to a group that " \
-            "no longer exists with path '#{path}'. This is considered a conflict that should be " \
-            "resolved manually."
+          next if !force_create_containing_group &&
+            !ConflictResolver.adding_file_to_nonexistent_group(path, change["displayName"])
+
+          containing_group = create_non_existent_containing_group(project, change, path)
         end
 
         if (removal_keys_to_references[change_key] || []).empty?
@@ -194,16 +214,39 @@ module Kintsugi
 
     def apply_group_and_file_diffs(project, diffs)
       diffs.each do |change, path|
-        component = project[path]
-
-        next if component.nil?
+        component = project.group_at_path(path)
 
         change.each do |subchange_name, subchange|
           next if subchange_name == "children"
 
+          if component.nil?
+            break unless ConflictResolver.changing_nonexistent_component(path)
+
+            component = create_nonexistent_component(project, path)
+          end
+
           apply_change_to_component(component, subchange_name, subchange, path)
         end
       end
+    end
+
+    def create_nonexistent_component(project, path)
+      source_project_component = @change_source_project.group_at_path(path)
+      component_change = source_project_component.to_tree_hash
+      containing_group_path = parent_group_path(path)
+
+      case source_project_component
+      when Xcodeproj::Project::PBXFileReference
+        apply_file_changes(project, [[component_change, containing_group_path]], [],
+                           force_create_containing_group: true)
+      when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
+        apply_group_additions(project, [[component_change, containing_group_path]],
+                              force_create_containing_group: true)
+      else
+        raise MergeError, "Component should either be a group or a file reference. " \
+                          "Instead got: #{source_project_component}"
+      end
+      project.group_at_path(path)
     end
 
     def apply_group_removals(project, removals)
@@ -265,13 +308,30 @@ module Kintsugi
 
       subchanges_of_change(change).each do |subchange_name, subchange|
         if component.nil?
-          raise MergeError, "Trying to apply changes to a component that doesn't exist at path " \
-            "#{change_path}. It was probably removed in a previous commit. This is considered a " \
-            "conflict that should be resolved manually."
+          # TODO: Force create all parent components as well? Not so trivial because it's assumed
+          # that `parent_component` exists. Maybe not needed because it will resolve conflicts on
+          # the first one that doesn't exist.
+          break unless ConflictResolver.changing_nonexistent_component(change_path)
+
+          source_project_component = component_at_path(@change_source_project, change_path)
+          add_child_to_component(parent_component, source_project_component.to_tree_hash,
+                                 change_path)
+          component = component_at_path(parent_component.project, change_path)
         end
 
         apply_change_to_component(component, subchange_name, subchange, change_path)
       end
+    end
+
+    def component_at_path(project, path)
+      current_component = project
+      until path["/"].nil?
+        change_name = path.split("/")[0]
+        current_component = child_component(current_component, change_name)
+        path = path.delete_prefix("#{change_name}/")
+      end
+
+      child_component(current_component, path)
     end
 
     def subchanges_of_change(change)
@@ -362,18 +422,20 @@ module Kintsugi
 
     def apply_change_to_simple_attribute(component, attribute_name, change)
       new_attribute_value =
-        simple_attribute_value_with_change(component.send(attribute_name), change)
+        simple_attribute_value_with_change(component.send(attribute_name), change, attribute_name)
       component.send("#{attribute_name}=", new_attribute_value)
     end
 
-    def simple_attribute_value_with_change(old_value, change)
+    def simple_attribute_value_with_change(old_value, change, attribute_name)
       type = simple_attribute_type(old_value, change[:removed], change[:added])
-      new_value = new_simple_attribute_value(type, old_value, change[:removed], change[:added])
+      new_value = new_simple_attribute_value(type, old_value, change[:removed], change[:added],
+                                             attribute_name)
 
       subchanges_of_change(change).each do |subchange_name, subchange_value|
         new_value = new_value || old_value || {}
         new_value[subchange_name] =
-          simple_attribute_value_with_change(old_value[subchange_name], subchange_value)
+          simple_attribute_value_with_change(old_value[subchange_name], subchange_value,
+                                             subchange_name)
       end
 
       new_value
@@ -409,28 +471,34 @@ module Kintsugi
       end
     end
 
-    def new_simple_attribute_value(type, old_value, removed_change, added_change)
+    def new_simple_attribute_value(type, old_value, removed_change, added_change, attribute_name)
       if type == Hash
-        new_hash_simple_attribute_value(old_value, removed_change, added_change)
+        new_hash_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       elsif type == Array
-        new_array_simple_attribute_value(old_value, removed_change, added_change)
+        new_array_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       elsif type == String
-        new_string_simple_attribute_value(old_value, removed_change, added_change)
+        new_string_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       else
         raise MergeError, "Unsupported types of all of the values. Existing value: " \
           "'#{old_value}', removed change: '#{removed_change}', added change: '#{added_change}'"
       end
     end
 
-    def new_hash_simple_attribute_value(old_value, removed_change, added_change)
+    def new_hash_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       return added_change if ((old_value || {}).to_a - (removed_change || {}).to_a).empty?
 
       # First apply the added change to see if there are any conflicts with it.
       new_value = (old_value || {}).merge(added_change || {})
+      conflicting_hash_values = (old_value.to_a - new_value.to_a)
 
-      unless (old_value.to_a - new_value.to_a).empty?
-        raise MergeError, "New hash #{change} contains values that conflict with old hash " \
-          "#{old_value}"
+      unless conflicting_hash_values.empty?
+        new_value = if ConflictResolver.setting_value_to_existing_key_in_hash(
+          attribute_name, old_value, added_change
+        )
+                      old_value.merge(added_change)
+                    else
+                      added_change.merge(old_value)
+                    end
       end
 
       if removed_change.nil?
@@ -440,16 +508,16 @@ module Kintsugi
       new_value
         .reject do |key, value|
           if value != removed_change[key] && value != (added_change || {})[key]
-            raise MergeError, "Trying to remove value '#{removed_change[key]}' of hash with key " \
-              "'#{key}' but it changed to #{value}. This is considered a conflict that should be " \
-              "resolved manually."
+            next ConflictResolver.removing_key_from_hash_with_different_value(
+              attribute_name, key, removed_change[key], value
+            )
           end
 
           removed_change.key?(key)
         end
     end
 
-    def new_array_simple_attribute_value(old_value, removed_change, added_change)
+    def new_array_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       if old_value.is_a?(String)
         old_value = [old_value]
       end
@@ -472,10 +540,15 @@ module Kintsugi
       new_value + filtered_added_change
     end
 
-    def new_string_simple_attribute_value(old_value, removed_change, added_change)
+    def new_string_simple_attribute_value(old_value, removed_change, added_change, attribute_name)
       if old_value != removed_change && !old_value.nil? && added_change != old_value
-        raise MergeError, "Trying to remove value '#{removed_change || "nil"}', but the existing " \
-          "value is '#{old_value}'. This is considered a conflict that should be resolved manually."
+        if ConflictResolver.setting_value_to_string_expected_different_value(
+          attribute_name, added_change, removed_change, old_value
+        )
+          return added_change
+        else
+          return old_value
+        end
       end
 
       added_change
@@ -484,21 +557,19 @@ module Kintsugi
     def remove_component(component, change)
       return if component.nil?
 
-      if component.to_tree_hash != change
-        raise MergeError, "Trying to remove an object that changed since then. This is " \
-          "considered a conflict that should be resolved manually. Name of the object is: " \
-          "'#{component.display_name}'. Existing component: #{component.to_tree_hash}. " \
-          "Change: #{change}"
+      if component.to_tree_hash != change &&
+          !ConflictResolver.removing_component_that_changed(component, change)
+        return
       end
 
       if change["isa"] == "PBXFileReference"
-        remove_build_files_of_file_reference(component, change)
+        remove_build_files_of_file_reference(component)
       end
 
       component.remove_from_project
     end
 
-    def remove_build_files_of_file_reference(file_reference, change)
+    def remove_build_files_of_file_reference(file_reference)
       # Since the build file's display name depends on the file reference, removing the file
       # reference before removing it will change the build file's display name which will not be
       # detected when trying to remove the build file. Therefore, the build files that depend on
@@ -636,11 +707,7 @@ module Kintsugi
         containing_component.file_ref =
           find_variant_group(containing_component.project, change["displayName"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        if find_group_in_group(containing_component, Xcodeproj::Project::PBXVariantGroup,
-                               change).nil?
-          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+        # Adding variant groups to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add variant group to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
@@ -695,7 +762,7 @@ module Kintsugi
     def add_build_file(build_phase, change, change_path)
       if change["fileRef"].nil?
         puts "Warning: Trying to add a build file without any file reference to build phase " \
-          "'#{build_phase}'"
+             "'#{build_phase}'"
         return
       end
 
@@ -849,11 +916,7 @@ module Kintsugi
       when Xcodeproj::Project::PBXBuildFile
         containing_component.file_ref = find_file(containing_component.project, change["path"])
       when Xcodeproj::Project::PBXGroup, Xcodeproj::Project::PBXVariantGroup
-        if find_file_in_group(containing_component, Xcodeproj::Project::PBXFileReference,
-                              change["path"]).nil?
-          raise "File should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+        # Adding files to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add file reference to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}"
@@ -867,11 +930,6 @@ module Kintsugi
         .find { |file| file.path == filepath }
     end
 
-    def adding_files_and_groups_allowed?(change_path)
-      change_path.start_with?("rootObject/mainGroup") ||
-        change_path.start_with?("rootObject/projectReferences")
-    end
-
     def add_group(containing_component, change, change_path)
       case containing_component
       when Xcodeproj::Project::ObjectDictionary
@@ -880,10 +938,7 @@ module Kintsugi
         containing_component[:product_group] = new_group
         add_attributes_to_component(new_group, change, change_path)
       when Xcodeproj::Project::PBXGroup
-        if find_group_in_group(containing_component, Xcodeproj::Project::PBXGroup, change).nil?
-          raise "Group should have been added already, so this is most likely a bug in Kintsugi" \
-            "Change is: #{change}. Change path: #{change_path}"
-        end
+        # Adding groups to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add group to an unsupported component type " \
           "#{containing_component.isa}. Change is: #{change}. Change path: #{change_path}"
@@ -931,7 +986,6 @@ module Kintsugi
       if file_references.length > 1
         puts "Debug: Found more than one matching file with path '#{path}'. Using the first one."
       elsif file_references.empty?
-        puts "Debug: No file reference found for file with path '#{path}'."
         return
       end
 
@@ -960,6 +1014,113 @@ module Kintsugi
 
     def join_path(left, right)
       left.empty? ? right : "#{left}/#{right}"
+    end
+
+    def parent_group_path(group_path)
+      group_path[/(.*)\//, 1] || ""
+    end
+  end
+
+  class ConflictResolver
+    class << self
+      def adding_group_to_nonexistent_group(containing_group_path, group_name)
+        resolve_merge_error(
+          "Trying to create group '#{group_name}' inside a group that doesn't exist. The group's " \
+          "path is '#{containing_group_path}'",
+          {
+            "Create containing group with path '#{containing_group_path}'": true,
+            "Ignore adding group '#{group_name}'": false
+          }
+        )
+      end
+
+      def adding_file_to_nonexistent_group(containing_group_path, file_name)
+        resolve_merge_error(
+          "Trying to add or move a file with name '#{file_name}' to a group that doesn't exist. " \
+          "The group's path is '#{containing_group_path}'",
+          {
+            "Create group with path '#{containing_group_path}'": true,
+            "Ignore adding file #{file_name}": false
+          }
+        )
+      end
+
+      def changing_nonexistent_component(path)
+        resolve_merge_error(
+          "Trying to apply change to a component that doesn't exist at path '#{path}'.",
+          {
+            "Create component and the comonents that contain it": true,
+            "Ignore change to component": false
+          }
+        )
+      end
+
+      def setting_value_to_existing_key_in_hash(hash_name, old_hash, new_hash)
+        resolve_merge_error(
+          "Trying to add hash value of attribute named '#{hash_name}': Merging hash " \
+          "#{new_hash} into existing hash #{old_hash} but it contains values that already " \
+          "exist",
+          {
+            "Override values from new hash": true,
+            "Ignore duplicate values in new hash": false
+          }
+        )
+      end
+
+      def removing_key_from_hash_with_different_value(
+        hash_name, key, expected_value, actual_value
+      )
+        resolve_merge_error(
+          "Trying to remove entry of hash named '#{hash_name}': Expected value for key " \
+          "'#{key}' is '#{expected_value}' but the existing vaule is '#{actual_value}'",
+          {
+            "Remove value with key '#{key}'": true,
+            "Keep value with key '#{key}'": false
+          }
+        )
+      end
+
+      def setting_value_to_string_expected_different_value(
+        string_name, new_value, expected_existing_value, actual_value
+      )
+        resolve_merge_error(
+          "Trying to change value of attribute named '#{string_name} from '#{new_value}' to " \
+          "'#{expected_existing_value || "nil"}', but the existing value is '#{actual_value}'",
+          {
+            "Set to new value '#{new_value}'": true,
+            "Keep existing value '#{actual_value}'": false
+          }
+        )
+      end
+
+      def removing_component_that_changed(component, change)
+        resolve_merge_error(
+          "Trying to remove a component named '#{component.display_name}': Expected value of " \
+          "#{change} but its existing value is #{component.to_tree_hash}",
+          {
+            "Remove object anyway": true,
+            "Keep object": false
+          }
+        )
+      end
+
+      private
+
+      def resolve_merge_error(message, options)
+        unless Settings.interactive_resolution
+          raise MergeError, "Merge error: #{message}"
+        end
+
+        prompt = TTY::Prompt.new
+        options = options.merge(
+          {Abort: -> { raise MergeError, "Merge error: #{message}" }}
+        )
+
+        prompt.select(
+          "A merge conflict that needs manual intervention occurred: #{message}. Choose one:",
+          options
+        )
+      end
     end
   end
 end

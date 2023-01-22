@@ -42,7 +42,8 @@ module Kintsugi
         File.write(changes_output_path, JSON.pretty_generate(change))
       end
 
-      apply_change_and_copy_to_original_path(ours_project, change, project_file_path, base_project)
+      apply_change_and_copy_to_original_path(ours_project, change, project_file_path,
+                                             theirs_project)
     end
 
     # Merges the changes done between `theirs_project_path` and `base_project_path` to the file at
@@ -83,7 +84,7 @@ module Kintsugi
                                        :added, :removed)
 
       apply_change_and_copy_to_original_path(ours_temporary_project, change, ours_project_path,
-                                             base_temporary_project)
+                                             theirs_temporary_project)
     end
 
     private
@@ -91,8 +92,8 @@ module Kintsugi
     PROJECT_FILE_NAME = "project.pbxproj"
 
     def apply_change_and_copy_to_original_path(project, change, original_project_file_path,
-                                               base_project)
-      apply_change_to_project(project, change, base_project)
+                                               theirs_project)
+      apply_change_to_project(project, change, theirs_project)
       project.save
       FileUtils.cp(File.join(project.path, PROJECT_FILE_NAME), original_project_file_path)
     end
