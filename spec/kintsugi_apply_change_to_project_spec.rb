@@ -135,6 +135,23 @@ describe Kintsugi, :apply_change_to_project do
     }.to raise_error(Kintsugi::MergeError)
   end
 
+  it "ignores removal of a product reference that was already removed" do
+    base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
+    base_project.save
+
+    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project.targets[0].product_reference.remove_from_project
+
+    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project.targets[0].product_reference.remove_from_project
+
+    changes_to_apply = get_diff(theirs_project, base_project)
+
+    described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+
+    expect(ours_project).to be_equivalent_to_project(theirs_project)
+  end
+
   describe "file related changes" do
     let(:filepath) { "foo" }
 
