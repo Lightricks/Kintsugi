@@ -39,7 +39,29 @@ module Xcodeproj
       end
     end
 
+
     module Object
+      class PBXContainerItemProxy
+        @@old_display_name = instance_method(:display_name)
+
+        def display_name
+            @@old_display_name.bind(self).call + " - " + self.remote_global_id_string + " " +
+              self.remote_info
+        end
+      end
+
+      class PBXReferenceProxy
+        @@old_display_name = instance_method(:display_name)
+
+        def display_name
+          if self.remote_ref.nil?
+            @@old_display_name.bind(self).call
+          else
+            @@old_display_name.bind(self).call + " - " + self.remote_ref.display_name
+          end
+        end
+      end
+
       # Extends `XCBuildConfiguration` to convert array settings (which might be either array or
       # string) to actual arrays in `to_tree_hash` so diffs are always between arrays. This means
       # that if the values in both `ours` and `theirs` are different strings, we will know to solve
