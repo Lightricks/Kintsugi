@@ -16,7 +16,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 2.5.8
+          ruby-version: 2.6.10
           rubygems: latest
 
       - name: Draft a new release
