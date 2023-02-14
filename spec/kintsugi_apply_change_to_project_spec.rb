@@ -147,7 +147,7 @@ describe Kintsugi, :apply_change_to_project do
 
     changes_to_apply = get_diff(theirs_project, base_project)
 
-    described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+    described_class.apply_change_to_project(ours_project, changes_to_apply)
 
     expect(ours_project).to be_equivalent_to_project(theirs_project)
   end
@@ -621,6 +621,10 @@ describe Kintsugi, :apply_change_to_project do
       base_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
 
       add_new_subproject_to_project(base_project, "subproj", framework_filename)
+
+      # Removes the container item proxy to make sure the display name of the reference proxy is the
+      # same as the file reference.
+      base_project.root_object.project_references[-1][:product_group].children[0].remote_ref.remove_from_project
       base_project.save
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
@@ -654,9 +658,12 @@ describe Kintsugi, :apply_change_to_project do
       framework_filename = "baz"
 
       add_new_subproject_to_project(base_project, "subproj", framework_filename)
-      base_project.targets[0].frameworks_build_phase.add_file_reference(
+      subproject_reference_proxy =
         base_project.root_object.project_references[0][:product_group].children[0]
-      )
+      # Removes the container item proxy to make sure the display name of the reference proxy is the
+      # same as the file reference.
+      subproject_reference_proxy.remote_ref.remove_from_project
+      base_project.targets[0].frameworks_build_phase.add_file_reference(subproject_reference_proxy)
 
       base_project.save
 
@@ -697,8 +704,6 @@ describe Kintsugi, :apply_change_to_project do
         container_proxy
 
       changes_to_apply = get_diff(theirs_project, base_project)
-
-      changes_to_apply["rootObject"].delete("projectReferences")
 
       described_class.apply_change_to_project(base_project, changes_to_apply)
 

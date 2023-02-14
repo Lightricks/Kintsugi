@@ -29,6 +29,45 @@ module Xcodeproj
     end
 
     module Object
+      # Modifies `PBXContainerItemProxy` to include relevant data in `displayName`.
+      # Currently, its `display_name` is just a constant for all `PBXContainerItemProxy` objects.
+      class PBXContainerItemProxy
+        def display_name
+          "#{self.remote_info} (#{self.remote_global_id_string})"
+        end
+      end
+
+      # Modifies `PBXReferenceProxy` to include more data in `displayName` to make it unique.
+      class PBXReferenceProxy
+        @@old_display_name = instance_method(:display_name)
+
+        def display_name
+          if self.remote_ref.nil?
+            @@old_display_name.bind(self).call
+          else
+            @@old_display_name.bind(self).call + " - " + self.remote_ref.display_name
+          end
+        end
+      end
+
+      # Modifies `PBXBuildFile` to calculate `ascii_plist_annotation` based on the underlying
+      # object's `ascii_plist_annotation` instead of relying on its `display_name`, as
+      # `display_name` might contain information that shouldn't be written to the project.
+      class PBXBuildFile
+        def ascii_plist_annotation
+          underlying_annotation =
+            if product_ref
+              product_ref.ascii_plist_annotation
+            elsif file_ref
+              file_ref.ascii_plist_annotation
+            else
+              super
+            end
+
+          " #{underlying_annotation.strip} in #{GroupableHelper.parent(self).display_name} "
+        end
+      end
+
       # Extends `XCBuildConfiguration` to convert array settings (which might be either array or
       # string) to actual arrays in `to_tree_hash` so diffs are always between arrays. This means
       # that if the values in both `ours` and `theirs` are different strings, we will know to solve
