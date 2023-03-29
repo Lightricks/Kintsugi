@@ -6,6 +6,16 @@ require "xcodeproj"
 
 module Xcodeproj
   class Project
+    # Returns the group found at `path`. If `path` is empty returns the main group. Returns `nil` if
+    # the group at path was not found.
+    #
+    # @param  [String] Path to the group.
+    #
+    # @return [PBXGroup/PBXVariantGroup/PBXFileReference]
+    def group_or_file_at_path(path)
+      path.empty? ? self.main_group : self[path]
+    end
+
     # Extends `ObjectDictionary` to act like an `Object` if `self` repreresents a project reference.
     class ObjectDictionary
       @@old_to_tree_hash = instance_method(:to_tree_hash)
@@ -29,6 +39,45 @@ module Xcodeproj
     end
 
     module Object
+      # Modifies `PBXContainerItemProxy` to include relevant data in `displayName`.
+      # Currently, its `display_name` is just a constant for all `PBXContainerItemProxy` objects.
+      class PBXContainerItemProxy
+        def display_name
+          "#{self.remote_info} (#{self.remote_global_id_string})"
+        end
+      end
+
+      # Modifies `PBXReferenceProxy` to include more data in `displayName` to make it unique.
+      class PBXReferenceProxy
+        @@old_display_name = instance_method(:display_name)
+
+        def display_name
+          if self.remote_ref.nil?
+            @@old_display_name.bind(self).call
+          else
+            @@old_display_name.bind(self).call + " - " + self.remote_ref.display_name
+          end
+        end
+      end
+
+      # Modifies `PBXBuildFile` to calculate `ascii_plist_annotation` based on the underlying
+      # object's `ascii_plist_annotation` instead of relying on its `display_name`, as
+      # `display_name` might contain information that shouldn't be written to the project.
+      class PBXBuildFile
+        def ascii_plist_annotation
+          underlying_annotation =
+            if product_ref
+              product_ref.ascii_plist_annotation
+            elsif file_ref
+              file_ref.ascii_plist_annotation
+            else
+              super
+            end
+
+          " #{underlying_annotation.strip} in #{GroupableHelper.parent(self).display_name} "
+        end
+      end
+
       # Extends `XCBuildConfiguration` to convert array settings (which might be either array or
       # string) to actual arrays in `to_tree_hash` so diffs are always between arrays. This means
       # that if the values in both `ours` and `theirs` are different strings, we will know to solve
@@ -128,7 +177,6 @@ module Xcodeproj
     #         Second array to the difference operation.
     #
     # @return [Array]
-    #
     def self.array_non_unique_diff(value_1, value_2)
       value_2_elements_by_count = value_2.reduce({}) do |hash, element|
         updated_element_hash = hash.key?(element) ? {element => hash[element] + 1} : {element => 1}

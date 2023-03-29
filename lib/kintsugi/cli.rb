@@ -33,10 +33,13 @@ module Kintsugi
     def create_driver_subcommand
       option_parser =
         OptionParser.new do |opts|
-          opts.banner = "Usage: kintsugi driver BASE OURS THEIRS ORIGINAL_FILE_PATH\n" \
+          opts.banner = "Usage: kintsugi driver BASE OURS THEIRS ORIGINAL_FILE_PATH [options]\n" \
             "Uses Kintsugi as a Git merge driver. Parameters " \
             "should be the path to base version of the file, path to ours version, path to " \
             "theirs version, and the original file path."
+
+          opts.on("--interactive-resolution=FLAG", TrueClass, "In case a conflict that requires " \
+            "human decision to resolve, show an interactive prompt with choices to resolve it")
 
           opts.on("-h", "--help", "Prints this help") do
             puts opts
@@ -44,12 +47,17 @@ module Kintsugi
           end
         end
 
-      driver_action = lambda { |_, arguments|
+      driver_action = lambda { |options, arguments|
         if arguments.count != 4
           puts "Incorrect number of arguments to 'driver' subcommand\n\n"
           puts option_parser
           exit(1)
         end
+
+        unless options[:"interactive-resolution"].nil?
+          Settings.interactive_resolution = options[:"interactive-resolution"]
+        end
+
         Kintsugi.three_way_merge(arguments[0], arguments[1], arguments[2], arguments[3])
         warn "\e[32mKintsugi auto-merged #{arguments[3]}\e[0m"
       }
@@ -64,8 +72,9 @@ module Kintsugi
     def create_install_driver_subcommand
       option_parser =
         OptionParser.new do |opts|
-          opts.banner = "Usage: kintsugi install-driver\n" \
-            "Installs Kintsugi as a Git merge driver globally. "
+          opts.banner = "Usage: kintsugi install-driver [driver-options]\n" \
+            "Installs Kintsugi as a Git merge driver globally. `driver-options` will be passed " \
+            "to `kintsugi driver`."
 
           opts.on("-h", "--help", "Prints this help") do
             puts opts
@@ -73,7 +82,7 @@ module Kintsugi
           end
         end
 
-      action = lambda { |_, arguments|
+      action = lambda { |options, arguments|
         if arguments.count != 0
           puts "Incorrect number of arguments to 'install-driver' subcommand\n\n"
           puts option_parser
@@ -85,7 +94,7 @@ module Kintsugi
           exit(1)
         end
 
-        install_kintsugi_driver_globally
+        install_kintsugi_driver_globally(options)
         puts "Done! 🪄"
       }
 
@@ -96,9 +105,10 @@ module Kintsugi
       )
     end
 
-    def install_kintsugi_driver_globally
+    def install_kintsugi_driver_globally(options)
       `git config --global merge.kintsugi.name "Kintsugi driver"`
-      `git config --global merge.kintsugi.driver "kintsugi driver %O %A %B %P"`
+      kintsugi_command = "kintsugi driver %O %A %B %P #{options}"
+      `git config --global merge.kintsugi.driver "#{kintsugi_command}"`
 
       attributes_file_path = global_attributes_file_path
       FileUtils.mkdir_p(File.dirname(attributes_file_path))
@@ -185,6 +195,9 @@ module Kintsugi
 
         opts.on("--allow-duplicates", "Allow to add duplicates of the same entity")
 
+        opts.on("--interactive-resolution=FLAG", TrueClass, "In case a conflict that requires " \
+                "human decision to resolve, show an interactive prompt with choices to resolve it")
+
         opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
       end
 
@@ -197,6 +210,10 @@ module Kintsugi
 
         if options[:"allow-duplicates"]
           Settings.allow_duplicates = true
+        end
+
+        unless options[:"interactive-resolution"].nil?
+          Settings.interactive_resolution = options[:"interactive-resolution"]
         end
 
         project_file_path = File.expand_path(arguments[0])
