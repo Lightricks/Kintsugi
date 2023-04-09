@@ -70,17 +70,10 @@ module Kintsugi
     end
 
     def create_install_driver_subcommand
-      option_parser =
-        OptionParser.new do |opts|
-          opts.banner = "Usage: kintsugi install-driver [driver-options]\n" \
-            "Installs Kintsugi as a Git merge driver globally. `driver-options` will be passed " \
-            "to `kintsugi driver`."
-
-          opts.on("-h", "--help", "Prints this help") do
-            puts opts
-            exit
-          end
-        end
+      option_parser = create_driver_subcommand.option_parser
+      option_parser.banner = "Usage: kintsugi install-driver [driver-options]\n" \
+        "Installs Kintsugi as a Git merge driver globally. `driver-options` will be passed " \
+        "to `kintsugi driver`."
 
       action = lambda { |options, arguments|
         if arguments.count != 0
@@ -94,7 +87,12 @@ module Kintsugi
           exit(1)
         end
 
-        install_kintsugi_driver_globally(options)
+        driver_options = options.map do |option_name, option_value|
+          prefix = option_name.length > 1 ? "--" : "-"
+          [prefix + option_name.to_s, option_value]
+        end.flatten
+
+        install_kintsugi_driver_globally(driver_options)
         puts "Done! 🪄"
       }
 
@@ -107,7 +105,7 @@ module Kintsugi
 
     def install_kintsugi_driver_globally(options)
       `git config --global merge.kintsugi.name "Kintsugi driver"`
-      kintsugi_command = "kintsugi driver %O %A %B %P #{options}"
+      kintsugi_command = "kintsugi driver %O %A %B %P #{options.join(" ")}".rstrip
       `git config --global merge.kintsugi.driver "#{kintsugi_command}"`
 
       attributes_file_path = global_attributes_file_path
