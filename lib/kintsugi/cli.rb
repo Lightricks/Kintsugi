@@ -31,21 +31,12 @@ module Kintsugi
     Command = Struct.new(:option_parser, :action, :description, keyword_init: true)
 
     def create_driver_subcommand
-      option_parser =
-        OptionParser.new do |opts|
-          opts.banner = "Usage: kintsugi driver BASE OURS THEIRS ORIGINAL_FILE_PATH [options]\n" \
-            "Uses Kintsugi as a Git merge driver. Parameters " \
-            "should be the path to base version of the file, path to ours version, path to " \
-            "theirs version, and the original file path."
-
-          opts.on("--interactive-resolution=FLAG", TrueClass, "In case a conflict that requires " \
-            "human decision to resolve, show an interactive prompt with choices to resolve it")
-
-          opts.on("-h", "--help", "Prints this help") do
-            puts opts
-            exit
-          end
-        end
+      option_parser = create_base_option_parser
+      option_parser.banner = "Usage: kintsugi driver BASE OURS THEIRS ORIGINAL_FILE_PATH " \
+          "[options]\n" \
+          "Uses Kintsugi as a Git merge driver. Parameters " \
+          "should be the path to base version of the file, path to ours version, path to " \
+          "theirs version, and the original file path."
 
       driver_action = lambda { |options, arguments|
         if arguments.count != 4
@@ -54,9 +45,7 @@ module Kintsugi
           exit(1)
         end
 
-        unless options[:"interactive-resolution"].nil?
-          Settings.interactive_resolution = options[:"interactive-resolution"]
-        end
+        update_settings(options)
 
         Kintsugi.three_way_merge(arguments[0], arguments[1], arguments[2], arguments[3])
         warn "\e[32mKintsugi auto-merged #{arguments[3]}\e[0m"
@@ -70,10 +59,10 @@ module Kintsugi
     end
 
     def create_install_driver_subcommand
-      option_parser = create_driver_subcommand.option_parser
+      option_parser = create_base_option_parser
       option_parser.banner = "Usage: kintsugi install-driver [driver-options]\n" \
-        "Installs Kintsugi as a Git merge driver globally. `driver-options` will be passed " \
-        "to `kintsugi driver`."
+          "Installs Kintsugi as a Git merge driver globally. `driver-options` will be passed " \
+          "to `kintsugi driver`."
 
       action = lambda { |options, arguments|
         if arguments.count != 0
@@ -87,10 +76,7 @@ module Kintsugi
           exit(1)
         end
 
-        driver_options = options.map do |option_name, option_value|
-          prefix = option_name.length > 1 ? "--" : "-"
-          [prefix + option_name.to_s, option_value]
-        end.flatten
+        driver_options = extract_driver_options(options, option_parser)
 
         install_kintsugi_driver_globally(driver_options)
         puts "Done! 🪄"
@@ -101,6 +87,27 @@ module Kintsugi
         action: action,
         description: "Installs Kintsugi as a Git merge driver globally"
       )
+    end
+
+    def extract_driver_options(options, option_parser)
+      options.map do |option_name, option_value|
+        switch = option_parser.top.search(:long, option_name.to_s)
+        prefix = "--"
+        if switch.nil?
+          switch = option_parser.top.search(:short, option_name.to_s)
+          prefix = "-"
+        end
+        case switch
+        when OptionParser::Switch::NoArgument
+          [prefix + option_name.to_s]
+        when NilClass
+          puts "Invalid flag #{option_name} passed to 'install-driver' subcommand\n\n"
+          puts option_parser
+          exit(1)
+        else
+          [prefix + option_name.to_s, option_value]
+        end
+      end.flatten
     end
 
     def install_kintsugi_driver_globally(options)
@@ -171,33 +178,21 @@ module Kintsugi
     end
 
     def create_root_command
-      option_parser = OptionParser.new do |opts|
-        opts.banner = "Kintsugi, version #{Version::STRING}\n" \
-                      "Copyright (c) 2021 Lightricks\n\n" \
-                      "Usage: kintsugi <pbxproj_filepath> [options]\n" \
-                      "       kintsugi <subcommand> [options]"
+      option_parser = create_base_option_parser
+      option_parser.banner = "Kintsugi, version #{Version::STRING}\n" \
+          "Copyright (c) 2021 Lightricks\n\n" \
+          "Usage: kintsugi <pbxproj_filepath> [options]\n" \
+          "       kintsugi <subcommand> [options]"
 
-        opts.separator ""
-        opts.on("--changes-output-path=PATH", "Path to which changes applied to the project are " \
-                "written in JSON format. Used for debug purposes.")
-
-        opts.on("-h", "--help", "Prints this help") do
-          puts opts
-          exit
-        end
-
-        opts.on("-v", "--version", "Prints version") do
-          puts Version::STRING
-          exit
-        end
-
-        opts.on("--allow-duplicates", "Allow to add duplicates of the same entity")
-
-        opts.on("--interactive-resolution=FLAG", TrueClass, "In case a conflict that requires " \
-                "human decision to resolve, show an interactive prompt with choices to resolve it")
-
-        opts.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
+      option_parser.on("-v", "--version", "Prints version") do
+        puts Version::STRING
+        exit
       end
+
+      option_parser.on("--changes-output-path=PATH", "Path to which changes applied to the " \
+          "project are written in JSON format. Used for debug purposes.")
+
+      option_parser.on_tail("\nSUBCOMMANDS\n#{subcommands_descriptions(subcommands)}")
 
       root_action = lambda { |options, arguments|
         if arguments.count != 1
@@ -206,13 +201,7 @@ module Kintsugi
           exit(1)
         end
 
-        if options[:"allow-duplicates"]
-          Settings.allow_duplicates = true
-        end
-
-        unless options[:"interactive-resolution"].nil?
-          Settings.interactive_resolution = options[:"interactive-resolution"]
-        end
+        update_settings(options)
 
         project_file_path = File.expand_path(arguments[0])
         Kintsugi.resolve_conflicts(project_file_path, options[:"changes-output-path"])
@@ -224,6 +213,32 @@ module Kintsugi
         action: root_action,
         description: nil
       )
+    end
+
+    def create_base_option_parser
+      OptionParser.new do |opts|
+        opts.separator ""
+
+        opts.on("-h", "--help", "Prints this help") do
+          puts opts
+          exit
+        end
+
+        opts.on("--allow-duplicates", "Allow to add duplicates of the same entity")
+
+        opts.on("--interactive-resolution=FLAG", TrueClass, "In case a conflict that requires " \
+                "human decision to resolve, show an interactive prompt with choices to resolve it")
+      end
+    end
+
+    def update_settings(options)
+      if options[:"allow-duplicates"]
+        Settings.allow_duplicates = true
+      end
+
+      unless options[:"interactive-resolution"].nil?
+        Settings.interactive_resolution = options[:"interactive-resolution"]
+      end
     end
 
     def subcommands_descriptions(subcommands)
