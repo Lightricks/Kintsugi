@@ -585,6 +585,26 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "keeps different files with the same name in their respective targets" do
+      file_reference = base_project.main_group.new_reference("file1.swift")
+      base_project.targets[0].source_build_phase.add_file_reference(file_reference)
+
+      base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
+      base_project.main_group.find_subpath("new_group", true).new_reference("file1.swift")
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      second_target = theirs_project.targets[1]
+      second_file_reference = theirs_project.main_group.find_subpath("new_group/file1.swift")
+      second_target.source_build_phase.add_file_reference(second_file_reference)
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+      expect(base_project.main_group.find_subpath("new_group/file1.swift").build_files).not_to be_empty
+    end
+
     it "moves file that is referenced by a target from a group to the main group" do
       file_reference = base_project.main_group.find_subpath("new_group", true).new_reference("bar")
       base_project.targets[0].source_build_phase.add_file_reference(file_reference)
@@ -1764,7 +1784,7 @@ describe Kintsugi, :apply_change_to_project do
     end
   end
 
-  describe "resovling conflicts interactively" do
+  describe "resolving conflicts interactively" do
     let(:test_prompt) { TTY::Prompt::Test.new }
 
     before do

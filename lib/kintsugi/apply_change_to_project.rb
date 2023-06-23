@@ -281,7 +281,8 @@ module Kintsugi
       end
 
       if change["isa"]
-        component = replace_component_with_new_type(parent_component, attribute_name, change)
+        component = replace_component_with_new_type(parent_component, attribute_name, change,
+                                                    change_path)
         change = change_for_component_of_new_type(component, change)
       else
         component = child_component(parent_component, change_name)
@@ -340,8 +341,9 @@ module Kintsugi
         else
           parent_component
         end
+      parent_change_path = change_path.split("/")[0...-1].join("/")
       add_child_to_component(non_object_list_parent, source_project_component.to_tree_hash,
-                             change_path)
+                             parent_change_path)
       component_at_path(non_object_list_parent.project, change_path)
     end
 
@@ -381,9 +383,10 @@ module Kintsugi
       end
     end
 
-    def replace_component_with_new_type(parent_component, name_in_parent_component, change)
+    def replace_component_with_new_type(parent_component, name_in_parent_component, change,
+                                        change_path)
       old_component = parent_component.send(name_in_parent_component)
-      new_component = component_of_new_type(parent_component, change, old_component)
+      new_component = component_of_new_type(parent_component, change, old_component, change_path)
 
       copy_attributes_to_new_component(old_component, new_component)
 
@@ -391,18 +394,32 @@ module Kintsugi
       new_component
     end
 
-    def component_of_new_type(parent_component, change, old_component)
+    def component_of_new_type(parent_component, change, old_component, change_path)
       if change["isa"][:added] == "PBXFileReference"
-        path = (change["path"] && change["path"][:added]) || old_component.path
+        source_project_component =
+          component_at_path(@change_source_project, change_path.split("/")[0...-1].join("/"))
+        if source_project_component.nil?
+          raise MergeError, "Couldn't find file reference in the project where the file should " \
+                            "reside. The file's change is #{change}. Change path is #{change_path}"
+        end
+
         case parent_component
         when Xcodeproj::Project::XCBuildConfiguration
-          parent_component.base_configuration_reference = find_file(parent_component.project, path)
+          parent_component.base_configuration_reference =
+            parent_component.project.group_or_file_at_path(
+              source_project_component.base_configuration_reference.hierarchy_path
+                .delete_prefix("/")
+            )
           return parent_component.base_configuration_reference
         when Xcodeproj::Project::PBXNativeTarget
-          parent_component.product_reference = find_file(parent_component.project, path)
+          parent_component.product_reference = parent_component.project.group_or_file_at_path(
+            source_project_component.product_reference.hierarchy_path.delete_prefix("/")
+          )
           return parent_component.product_reference
         when Xcodeproj::Project::PBXBuildFile
-          parent_component.file_ref = find_file(parent_component.project, path)
+          parent_component.file_ref = parent_component.project.group_or_file_at_path(
+            source_project_component.file_ref.hierarchy_path.delete_prefix("/")
+          )
           return parent_component.file_ref
         end
       end
@@ -891,14 +908,19 @@ module Kintsugi
         end
       return if !Settings.allow_duplicates && !existing_subproject.nil?
 
-      filter_subproject_without_project_references = lambda do |file_reference|
+      source_project_subproject_reference = component_at_path(@change_source_project, change_path)
+      if source_project_subproject_reference.nil?
+        raise MergeError, "Project reference with change #{project_reference_change} doesn't " \
+                          "exist in the source project. Change path is #{change_path}"
+      end
+
+      subproject_reference = root_object.project.files.find do |file_reference|
+        file_reference.hierarchy_path ==
+          source_project_subproject_reference.project_ref.hierarchy_path &&
         root_object.project_references.find do |project_reference|
           project_reference.project_ref.uuid == file_reference.uuid
         end.nil?
       end
-      subproject_reference =
-        find_file(root_object.project, project_reference_change["ProjectRef"]["path"],
-                  file_filter: filter_subproject_without_project_references)
 
       unless subproject_reference
         raise MergeError, "No file reference was found for project reference with change " \
@@ -941,17 +963,29 @@ module Kintsugi
     end
 
     def add_file_reference(containing_component, change, change_path)
-      # base configuration reference and product reference always reference a file that exists
-      # inside a group, therefore in these cases the file is searched for.
+      source_project_component =
+        component_at_path(@change_source_project, change_path.split("/")[0...-1].join("/"))
+      if source_project_component.nil?
+        raise MergeError, "Couldn't find file reference in the project where the file should " \
+                          "reside. The file's change is #{change}. Change path is #{change_path}"
+      end
+
       case containing_component
       when Xcodeproj::Project::XCBuildConfiguration
         containing_component.base_configuration_reference =
-          find_file(containing_component.project, change["path"])
+          containing_component.project.group_or_file_at_path(
+            source_project_component.base_configuration_reference.hierarchy_path.delete_prefix("/")
+          )
       when Xcodeproj::Project::PBXNativeTarget
         containing_component.product_reference =
-          find_file(containing_component.project, change["path"])
+          containing_component.project.group_or_file_at_path(
+            source_project_component.product_reference.hierarchy_path.delete_prefix("/")
+          )
       when Xcodeproj::Project::PBXBuildFile
-        containing_component.file_ref = find_file(containing_component.project, change["path"])
+        containing_component.file_ref =
+          containing_component.project.group_or_file_at_path(
+            source_project_component.file_ref.hierarchy_path.delete_prefix("/")
+          )
       when Xcodeproj::Project::PBXGroup
         # Adding files to groups is handled by another part of the code.
       else
@@ -1002,7 +1036,8 @@ module Kintsugi
           add_child_to_component(component, change_value, change_path)
         when Array
           change_value.each do |added_attribute_element|
-            add_child_to_component(component, added_attribute_element, change_path)
+            add_child_to_component(component, added_attribute_element,
+                                   "#{change_path}/#{change_name}")
           end
         else
           raise MergeError, "Trying to add attribute of unsupported type '#{change_value.class}' " \
@@ -1015,19 +1050,6 @@ module Kintsugi
       component.simple_attributes.find do |attribute|
         attribute.name == attribute_name
       end.default_value
-    end
-
-    def find_file(project, path, file_filter: ->(_) { true })
-      file_references = project.files.select do |file_reference|
-        file_reference.path == path && file_filter.call(file_reference)
-      end
-      if file_references.length > 1
-        puts "Debug: Found more than one matching file with path '#{path}'. Using the first one."
-      elsif file_references.empty?
-        return
-      end
-
-      file_references.first
     end
 
     def find_reference_proxy(project, change, reference_filter: ->(_) { true })
