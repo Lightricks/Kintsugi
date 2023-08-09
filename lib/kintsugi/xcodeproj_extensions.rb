@@ -113,6 +113,18 @@ module Xcodeproj
           string.scan(/ *((['"]?).*?[^\\]\2)(?=( |\z))/).map(&:first)
         end
       end
+
+      # Modifies `PBXTargetDependency`'s `to_tree_hash` to not crash if `target_proxy` is `nil`.
+      # The same fix was done in https://github.com/CocoaPods/Xcodeproj/pull/915/.
+      class PBXTargetDependency
+        def to_tree_hash
+          hash = {}
+          hash['displayName'] = display_name
+          hash['isa'] = isa
+          hash['targetProxy'] = target_proxy.to_tree_hash if target_proxy
+          hash
+        end
+      end
     end
   end
 
