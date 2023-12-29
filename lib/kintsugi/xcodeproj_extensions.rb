@@ -125,6 +125,17 @@ module Xcodeproj
           hash
         end
       end
+
+      # By default, for this type, the `display_name` is used when calling `ascii_plist_annotation` (which is used
+      # to serialize the project to disk). In the case where the `display_name` contains a "plugin:" prefix, which
+      # means that the package is a plugin, the prefix is ommitted so just the package name is used.
+      # This, of course can be implemented in a better way, like adding a field to this object as plugin, marking it
+      # as a plugin, but this is a very simple way to achieve the desired result.
+      class XCSwiftPackageProductDependency
+        def ascii_plist_annotation
+          " #{display_name.delete_prefix("plugin:")} "
+        end
+      end
     end
   end
 
