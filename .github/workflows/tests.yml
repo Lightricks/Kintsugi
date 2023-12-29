@@ -10,6 +10,9 @@ jobs:
   main-job:
     name: Main
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ruby-version: [2.6, 2.7, 3.2, 3.3]
 
     steps:
       - name: Checkout repo
@@ -18,8 +21,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 2.6.10
-          rubygems: latest
+          ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
 
       - name: Run Rake
