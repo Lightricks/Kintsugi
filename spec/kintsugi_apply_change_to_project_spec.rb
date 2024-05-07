@@ -1399,14 +1399,37 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
-    it "adds base configuration reference to new target" do
+    it "adds base configuration reference" do
       base_project.main_group.new_reference("baz")
+      base_project.save
 
       theirs_project = create_copy_of_project(base_project.path, "theirs")
       configuration_reference = theirs_project.main_group.find_subpath("baz")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.base_configuration_reference = configuration_reference
       end
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "adds base configuration reference to new configuration in a new list" do
+      base_project.main_group.new_reference("baz")
+      base_project.targets[0].build_configuration_list = nil
+      base_project.save
+
+      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      configuration_reference = theirs_project.main_group.find_subpath("baz")
+
+      configuration_list = theirs_project.new(Xcodeproj::Project::XCConfigurationList)
+      theirs_project.targets[0].build_configuration_list = configuration_list
+
+      build_configuration = theirs_project.new(Xcodeproj::Project::XCBuildConfiguration)
+      build_configuration.base_configuration_reference = configuration_reference
+      configuration_list.build_configurations << build_configuration
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
