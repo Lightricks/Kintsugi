@@ -306,7 +306,8 @@ module Kintsugi
         component = child_component(parent_component, change_name)
       elsif change[:added].is_a?(Array)
         (change[:added]).each do |added_change|
-          add_child_to_component(parent_component, added_change, change_path)
+          add_child_to_component(parent_component, added_change,
+                                 join_path(change_path, added_change["displayName"]))
         end
       elsif !change[:added].nil?
         raise MergeError, "Unsupported added change type for #{change[:added]}"
@@ -341,9 +342,8 @@ module Kintsugi
         else
           parent_component
         end
-      parent_change_path = change_path.split("/")[0...-1].join("/")
       add_child_to_component(non_object_list_parent, source_project_component.to_tree_hash,
-                             parent_change_path)
+                             change_path)
       component_at_path(non_object_list_parent.project, change_path)
     end
 
@@ -637,9 +637,7 @@ module Kintsugi
       end
     end
 
-    def add_child_to_component(component, change, component_change_path)
-      change_path = join_path(component_change_path, change["displayName"])
-
+    def add_child_to_component(component, change, change_path)
       if change["ProjectRef"] && change["ProductGroup"]
         add_subproject_reference(component, change, change_path)
         return
@@ -1031,13 +1029,14 @@ module Kintsugi
           next
         end
 
+        child_path = join_path(change_path, change_name)
         case change_value
         when Hash
-          add_child_to_component(component, change_value, change_path)
+          add_child_to_component(component, change_value, child_path)
         when Array
           change_value.each do |added_attribute_element|
-            add_child_to_component(component, added_attribute_element,
-                                   "#{change_path}/#{change_name}")
+            element_path = join_path(child_path, added_attribute_element["displayName"])
+            add_child_to_component(component, added_attribute_element, element_path)
           end
         else
           raise MergeError, "Trying to add attribute of unsupported type '#{change_value.class}' " \
