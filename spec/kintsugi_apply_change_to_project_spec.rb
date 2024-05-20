@@ -2149,10 +2149,8 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   def create_copy_of_project(project, new_project_prefix)
-    project.save
-
     copied_project_path = make_temp_directory(new_project_prefix, ".xcodeproj")
-    FileUtils.cp(File.join(project.path, "project.pbxproj"), copied_project_path)
+    project.save(copied_project_path)
     Xcodeproj::Project.open(copied_project_path)
   end
 
