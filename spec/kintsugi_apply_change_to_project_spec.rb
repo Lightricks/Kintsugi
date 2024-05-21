@@ -21,7 +21,6 @@ describe Kintsugi, :apply_change_to_project do
 
   before do
     Kintsugi::Settings.interactive_resolution = false
-    base_project.save
   end
 
   after do
@@ -32,14 +31,14 @@ describe Kintsugi, :apply_change_to_project do
 
   it "not raises when change is nil or doesn't have root object" do
     expect {
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(base_project, nil, theirs_project)
       described_class.apply_change_to_project(base_project, {}, theirs_project)
     }.not_to raise_error
   end
 
   it "adds new target" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.new_target("com.apple.product-type.library.static", "foo", :ios)
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -50,7 +49,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "adds new aggregate target" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.new_aggregate_target("foo")
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -61,7 +60,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "adds package reference" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     theirs_project.root_object.package_references <<
       create_remote_swift_package_reference(theirs_project)
@@ -74,7 +73,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "adds new subproject" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     add_new_subproject_to_project(theirs_project, "foo", "foo")
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -93,9 +92,8 @@ describe Kintsugi, :apply_change_to_project do
       create_reference_proxy_from_product_reference(base_project,
                                                     base_project.root_object.project_references[0][:project_ref],
                                                     subproject.products_group.files[-1])
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.project_references[0][:product_group].children[-1].remove_from_project
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -107,7 +105,7 @@ describe Kintsugi, :apply_change_to_project do
 
   # Checks that the order the changes are applied in is correct.
   it "adds new subproject and reference to its framework" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     add_new_subproject_to_project(theirs_project, "foo", "foo")
 
     target = theirs_project.new_target("com.apple.product-type.library.static", "foo", :ios)
@@ -123,12 +121,11 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "raises if adding subproject whose file reference isn't found" do
-    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project = create_copy_of_project(base_project, "ours")
 
     add_new_subproject_to_project(base_project, "foo", "foo")
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     base_project.root_object.project_references.pop
 
@@ -141,12 +138,11 @@ describe Kintsugi, :apply_change_to_project do
 
   it "ignores removal of a product reference that was already removed" do
     base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
-    base_project.save
 
-    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project = create_copy_of_project(base_project, "ours")
     ours_project.targets[0].product_reference.remove_from_project
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.targets[0].product_reference.remove_from_project
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -161,14 +157,12 @@ describe Kintsugi, :apply_change_to_project do
 
     before do
       base_project.main_group.new_reference(filepath)
-      base_project.save
     end
 
     it "moves file to another group" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group = theirs_project.main_group.find_subpath("new_group")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.move(new_group)
@@ -182,9 +176,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "raises if trying to move file to another group that no longer exists" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group = theirs_project.main_group.find_subpath("new_group")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.move(new_group)
@@ -200,9 +193,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "raises if trying to add file to a group that no longer exists" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.find_subpath("new_group").new_reference("foo")
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -216,17 +208,15 @@ describe Kintsugi, :apply_change_to_project do
 
     it "does nothing if trying to remove a file from a group that no longer exists" do
       base_project.main_group.find_subpath("new_group", true).new_reference("foo")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.find_subpath("new_group/foo").remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
       base_project.main_group.find_subpath("new_group").remove_from_project
 
-      base_project.save
-      expected_project = create_copy_of_project(base_project.path, "expected")
+      expected_project = create_copy_of_project(base_project, "expected")
 
       described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
 
@@ -236,9 +226,8 @@ describe Kintsugi, :apply_change_to_project do
     it "raises when a file is split into two" do
       base_project.main_group.find_subpath("new_group", true)
       base_project.main_group.find_subpath("new_group2", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group = theirs_project.main_group.find_subpath("new_group")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.move(new_group)
@@ -252,7 +241,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds file to new group" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_project.main_group.find_subpath("new_group", true).new_reference(filepath)
 
@@ -265,9 +254,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "removes group" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project["new_group"].remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -280,9 +268,8 @@ describe Kintsugi, :apply_change_to_project do
     it "moves a group with files in it" do
       new_group = base_project.main_group.find_subpath("new_group", true)
       new_group.new_reference("new_file")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
       theirs_project["new_group"].move(new_group2)
 
@@ -295,9 +282,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "raises when trying to add a group to a group that no longer exists" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project["new_group"].find_subpath("sub_group", true)
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -312,9 +298,8 @@ describe Kintsugi, :apply_change_to_project do
     it "raises when trying to move a group to a group that no longer exists" do
       base_project.main_group.find_subpath("new_group", true)
       base_project.main_group.find_subpath("other_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project["other_group"].move(theirs_project["new_group"])
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -329,9 +314,8 @@ describe Kintsugi, :apply_change_to_project do
     it "moves a group with a group in it" do
       new_group = base_project.main_group.find_subpath("new_group", true)
       new_group.find_subpath("sub_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
       theirs_project["new_group"].move(new_group2)
 
@@ -346,9 +330,8 @@ describe Kintsugi, :apply_change_to_project do
       new_group = base_project.main_group.find_subpath("new_group", true)
       sub_group = new_group.find_subpath("sub_group", true)
       sub_group.new_reference("new_file")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group2 = theirs_project.main_group.find_subpath("new_group2", true)
       theirs_project["new_group"].move(new_group2)
 
@@ -360,7 +343,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds file with include in index and last known file type as nil" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.new_reference("#{filepath}.h")
       file_reference.include_in_index = nil
       file_reference.last_known_file_type = nil
@@ -373,7 +356,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "renames file" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.path = "newFoo"
 
@@ -385,7 +368,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "removes file" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.find_file_by_path(filepath).remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -399,9 +382,8 @@ describe Kintsugi, :apply_change_to_project do
       target = base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
       file_reference = base_project.main_group.find_file_by_path(filepath)
       target.frameworks_build_phase.add_file_reference(file_reference)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.include_in_index = "4"
 
@@ -414,9 +396,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "ignores removal of a non-existent group" do
       base_project.main_group.find_subpath("new_group", true)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.children.delete_at(-1)
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -433,9 +414,8 @@ describe Kintsugi, :apply_change_to_project do
       target.source_build_phase.add_file_reference(
         base_project.main_group.find_file_by_path(filepath)
       )
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.find_file_by_path(filepath)
       file_reference.build_files.each do |build_file|
         build_file.referrers.each do |referrer|
@@ -452,7 +432,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds file inside a group that has a path on filesystem" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       new_group = theirs_project.main_group.find_subpath("new_group", true)
       new_group.path = "some_path"
@@ -467,7 +447,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "handles subfile changes" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_project.main_group.find_file_by_path(filepath).explicit_file_type = "bar"
       theirs_project.main_group.find_file_by_path(filepath).include_in_index = "0"
@@ -482,9 +462,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "handles moved file to an existing group with a different path on filesystem" do
       base_project.main_group.find_subpath("new_group", true).path = "some_path"
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group = theirs_project.main_group.find_subpath("new_group")
       theirs_project.main_group.find_file_by_path(filepath).move(new_group)
 
@@ -497,12 +476,11 @@ describe Kintsugi, :apply_change_to_project do
 
     describe "dealing with unexpected change" do
       it "raises if applying change to a file whose containing group doesn't exist" do
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         new_group = ours_project.main_group.find_subpath("new_group", true)
         ours_project.main_group.find_file_by_path(filepath).move(new_group)
-        ours_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_file_by_path(filepath).explicit_file_type = "bar"
 
         ours_project.main_group.find_subpath("new_group").remove_from_project
@@ -515,11 +493,10 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "raises if applying change to a file that doesn't exist" do
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_file_by_path(filepath).remove_from_project
-        ours_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_file_by_path(filepath).explicit_file_type = "bar"
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -530,16 +507,15 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "ignores removal of a file whose group doesn't exist" do
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.remove_from_project
-        ours_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_file_by_path(filepath).remove_from_project
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project_before_applying_changes = create_copy_of_project(ours_project.path, "ours")
+        ours_project_before_applying_changes = create_copy_of_project(ours_project, "ours")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
@@ -547,10 +523,10 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "ignores removal of non-existent file" do
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_file_by_path(filepath).remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_file_by_path(filepath).remove_from_project
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -565,16 +541,11 @@ describe Kintsugi, :apply_change_to_project do
   describe "target related changes" do
     let!(:target) { base_project.new_target("com.apple.product-type.library.static", "foo", :ios) }
 
-    before do
-      base_project.save
-    end
-
     it "moves file that is referenced by a target from main group to a new group" do
       file_reference = base_project.main_group.new_reference("bar")
       base_project.targets[0].source_build_phase.add_file_reference(file_reference)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       new_group = theirs_project.main_group.find_subpath("new_group", true)
       file_reference = theirs_project.main_group.find_file_by_path("bar")
       file_reference.move(new_group)
@@ -591,9 +562,8 @@ describe Kintsugi, :apply_change_to_project do
 
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
       base_project.main_group.find_subpath("new_group", true).new_reference("file1.swift")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       second_target = theirs_project.targets[1]
       second_file_reference = theirs_project.main_group.find_subpath("new_group/file1.swift")
       second_target.source_build_phase.add_file_reference(second_file_reference)
@@ -608,9 +578,8 @@ describe Kintsugi, :apply_change_to_project do
     it "moves file that is referenced by a target from a group to the main group" do
       file_reference = base_project.main_group.find_subpath("new_group", true).new_reference("bar")
       base_project.targets[0].source_build_phase.add_file_reference(file_reference)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project["new_group/bar"]
       file_reference.move(theirs_project.main_group)
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -623,9 +592,8 @@ describe Kintsugi, :apply_change_to_project do
     it "moves file that is referenced by a target and has a different file encoding" do
       file_reference = base_project.main_group.find_subpath("new_group", true).new_reference("bar")
       target.frameworks_build_phase.add_file_reference(file_reference)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project["new_group/bar"]
       file_reference.move(theirs_project.main_group)
       file_reference.fileEncoding = "4"
@@ -648,9 +616,8 @@ describe Kintsugi, :apply_change_to_project do
       # Removes the container item proxy to make sure the display name of the reference proxy is the
       # same as the file reference.
       base_project.root_object.project_references[-1][:product_group].children[0].remote_ref.remove_from_project
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       build_phase = theirs_project.targets[0].frameworks_build_phase
       build_phase.files.find { |build_file| build_file.display_name == "baz" }.remove_from_project
@@ -666,7 +633,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds package product dependency to target" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[0].package_product_dependencies <<
         create_swift_package_product_dependency(theirs_project)
 
@@ -688,9 +655,8 @@ describe Kintsugi, :apply_change_to_project do
       subproject_reference_proxy.remote_ref.remove_from_project
       base_project.targets[0].frameworks_build_phase.add_file_reference(subproject_reference_proxy)
 
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       file_reference = theirs_project.main_group.new_reference("bar")
       file_reference.name = framework_filename
@@ -719,9 +685,8 @@ describe Kintsugi, :apply_change_to_project do
       container_proxy = build_file.file_ref.remote_ref
       build_file.file_ref.remote_ref = nil
 
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_project.targets[0].frameworks_build_phase.files[-1].file_ref.remote_ref =
         container_proxy
@@ -736,9 +701,8 @@ describe Kintsugi, :apply_change_to_project do
     it "adds subproject target and adds reference to it" do
       framework_filename = "baz"
       subproject = add_new_subproject_to_project(base_project, "subproj", framework_filename)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       subproject.new_target("com.apple.product-type.library.static", "bari", :ios)
 
@@ -761,9 +725,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "adds new build file" do
       base_project.main_group.new_reference("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
@@ -778,14 +741,13 @@ describe Kintsugi, :apply_change_to_project do
     it "adds build when there is a build file without file ref" do
       target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
       target.frameworks_build_phase.add_file_reference(nil)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.new_reference("bar")
       theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
 
       changes_to_apply = get_diff(theirs_project, base_project)
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(theirs_project)
@@ -793,9 +755,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "adds product ref to build file" do
       base_project.main_group.new_reference("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       build_file =
@@ -813,9 +774,8 @@ describe Kintsugi, :apply_change_to_project do
     it "adds build file to a file reference that already exists" do
       base_project.main_group.new_reference("bar")
       base_project.main_group.new_reference("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_file_reference = theirs_project.main_group.files.find do |file|
         !file.referrers.find { |referrer| referrer.is_a?(Xcodeproj::Project::PBXBuildFile) } &&
@@ -834,9 +794,8 @@ describe Kintsugi, :apply_change_to_project do
       file_reference = base_project.main_group.new_reference("bar")
       build_file = base_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
       build_file.file_ref = nil
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       theirs_project.targets[0].frameworks_build_phase.files[-1].file_ref = file_reference
@@ -850,9 +809,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "ignores build file without file reference" do
       base_project.main_group.new_reference("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.files.find { |file| file.display_name == "bar" }
       build_file =
         theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
@@ -860,14 +818,14 @@ describe Kintsugi, :apply_change_to_project do
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
-      other_project = create_copy_of_project(base_project.path, "other")
+      other_project = create_copy_of_project(base_project, "other")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
 
     it "adds new build rule" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       build_rule = theirs_project.new(Xcodeproj::Project::PBXBuildRule)
       build_rule.compiler_spec = "com.apple.compilers.proxy.script"
@@ -893,7 +851,7 @@ describe Kintsugi, :apply_change_to_project do
 
     describe "build settings" do
       it "adds new string build setting" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "$(SRCROOT)/../Bar"
@@ -910,7 +868,7 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {}
         end
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = [
@@ -927,7 +885,7 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "adds new hash build setting" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = [
@@ -950,7 +908,7 @@ describe Kintsugi, :apply_change_to_project do
           ]
         end
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = [
@@ -967,21 +925,21 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "adds array value to an existing string if no removed value" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
         end
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo baz]
         end
@@ -989,21 +947,21 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "adds string value to existing array value if no removed value" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
         end
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo baz]
         end
@@ -1017,9 +975,8 @@ describe Kintsugi, :apply_change_to_project do
             "$(SRCROOT)/../Bar"
           ]
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
         end
@@ -1035,9 +992,8 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings =
             configuration.build_settings.reject { |key, _| key == "HEADER_SEARCH_PATHS" }
@@ -1054,9 +1010,8 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
@@ -1073,14 +1028,13 @@ describe Kintsugi, :apply_change_to_project do
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
           configuration.build_settings["foo"] = "baz"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
 
-        ours_project = create_copy_of_project(base_project.path, "theirs")
+        ours_project = create_copy_of_project(base_project, "theirs")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["foo"] = nil
         end
@@ -1093,14 +1047,13 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "removes value if existing is string and removed is array that contains it" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project = create_copy_of_project(base_project, "before_theirs")
         before_theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = ["bar"]
         end
@@ -1113,14 +1066,13 @@ describe Kintsugi, :apply_change_to_project do
       end
 
       it "removes value if removed value is string and existing is array that contains it" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = ["bar"]
         end
-        base_project.save
 
-        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project = create_copy_of_project(base_project, "before_theirs")
         before_theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
@@ -1134,14 +1086,13 @@ describe Kintsugi, :apply_change_to_project do
 
       it "removes value if existing is string and removed is array that contains it among other " \
           "values" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project = create_copy_of_project(base_project, "before_theirs")
         before_theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
         end
@@ -1149,9 +1100,8 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
-        base_project.save
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = nil
         end
@@ -1160,14 +1110,13 @@ describe Kintsugi, :apply_change_to_project do
 
       it "changes to a single string value if removed is string and existing is array that " \
           "contains it among another value" do
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
         end
-        base_project.save
 
-        before_theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        before_theirs_project = create_copy_of_project(base_project, "before_theirs")
         before_theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
@@ -1175,9 +1124,8 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, before_theirs_project)
 
         described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
-        base_project.save
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
@@ -1188,9 +1136,8 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
@@ -1206,9 +1153,8 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[baz foo]
         end
@@ -1222,19 +1168,18 @@ describe Kintsugi, :apply_change_to_project do
 
       it "changes to array if added value is string and existing is another string and removal is" \
           "nil for an array build setting" do
-        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+        before_theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        theirs_project = create_copy_of_project(base_project, "before_theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar baz]
         end
@@ -1248,14 +1193,13 @@ describe Kintsugi, :apply_change_to_project do
 
       it "raises if added value is string and existing is another string and removal is nil for a " \
           "string build setting" do
-        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+        before_theirs_project = create_copy_of_project(base_project, "theirs")
 
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "bar"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "before_theirs")
+        theirs_project = create_copy_of_project(base_project, "before_theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "baz"
         end
@@ -1272,14 +1216,12 @@ describe Kintsugi, :apply_change_to_project do
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
         end
 
-        base_project.save
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
 
-        base_project.save
-        before_theirs_project = create_copy_of_project(base_project.path, "theirs")
+        before_theirs_project = create_copy_of_project(base_project, "theirs")
         before_theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["HEADER_SEARCH_PATHS"] = "baz"
         end
@@ -1293,7 +1235,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds build phases" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_project.targets[0].new_shell_script_build_phase("bar")
       theirs_project.targets[0].source_build_phase
@@ -1310,7 +1252,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds build phase with a simple attribute value that has non nil default" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[0].new_shell_script_build_phase("bar")
       theirs_project.targets[0].build_phases.last.shell_script = "Other value"
 
@@ -1323,9 +1265,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "removes build phase" do
       base_project.targets[0].new_shell_script_build_phase("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[0].shell_script_build_phases[0].remove_from_project
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -1340,9 +1281,8 @@ describe Kintsugi, :apply_change_to_project do
       file = variant_group.new_reference("Base")
       file.last_known_file_type = "text.plist.strings"
       target.resources_build_phase.add_file_reference(variant_group)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_variant_group = theirs_project.main_group.find_subpath("foo.strings")
       theirs_variant_group.new_reference("en")
 
@@ -1355,9 +1295,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "adds target dependency" do
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[1].add_dependency(theirs_project.targets[0])
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -1371,9 +1310,8 @@ describe Kintsugi, :apply_change_to_project do
       base_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "foo"
       end
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "bar"
       end
@@ -1386,7 +1324,7 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds build settings to new target" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.new_target("com.apple.product-type.library.static", "bar", :ios)
       theirs_project.targets[1].build_configurations.each do |configuration|
         configuration.build_settings["GCC_PREFIX_HEADER"] = "baz"
@@ -1401,9 +1339,8 @@ describe Kintsugi, :apply_change_to_project do
 
     it "adds base configuration reference" do
       base_project.main_group.new_reference("baz")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       configuration_reference = theirs_project.main_group.find_subpath("baz")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.base_configuration_reference = configuration_reference
@@ -1419,9 +1356,8 @@ describe Kintsugi, :apply_change_to_project do
     it "adds base configuration reference to new configuration in a new list" do
       base_project.main_group.new_reference("baz")
       base_project.targets[0].build_configuration_list = nil
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       configuration_reference = theirs_project.main_group.find_subpath("baz")
 
       configuration_list = theirs_project.new(Xcodeproj::Project::XCConfigurationList)
@@ -1440,7 +1376,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "adds known regions" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.known_regions += ["fr"]
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1451,7 +1387,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "removes known regions" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.known_regions = nil
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1462,7 +1398,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "adds attribute target changes even if target attributes don't exist" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     theirs_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
@@ -1476,9 +1412,8 @@ describe Kintsugi, :apply_change_to_project do
 
   it "adds attribute target changes of new target" do
     base_project.root_object.attributes["TargetAttributes"] = {}
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
 
@@ -1491,9 +1426,8 @@ describe Kintsugi, :apply_change_to_project do
 
   it "adds attribute target changes of existing target" do
     base_project.root_object.attributes["TargetAttributes"] = {"foo" => {}}
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
 
@@ -1507,9 +1441,8 @@ describe Kintsugi, :apply_change_to_project do
   it "removes attribute target changes" do
     base_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.attributes["TargetAttributes"]["foo"] = {}
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1522,12 +1455,11 @@ describe Kintsugi, :apply_change_to_project do
   it "removes attribute target changes from a project it was removed from already" do
     base_project.root_object.attributes["TargetAttributes"] =
       {"foo" => {"LastSwiftMigration" => "1140"}}
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.attributes["TargetAttributes"]["foo"] = {}
 
-    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project = create_copy_of_project(base_project, "ours")
     ours_project.root_object.attributes["TargetAttributes"]["foo"] = {}
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1539,12 +1471,11 @@ describe Kintsugi, :apply_change_to_project do
 
   it "doesn't throw if existing attribute target change is same as added change" do
     base_project.root_object.attributes["TargetAttributes"] = {"foo" => "1140"}
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.attributes["TargetAttributes"]["foo"] = "1111"
 
-    ours_project = create_copy_of_project(base_project.path, "ours")
+    ours_project = create_copy_of_project(base_project, "ours")
     ours_project.root_object.attributes["TargetAttributes"]["foo"] = "1111"
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1560,13 +1491,11 @@ describe Kintsugi, :apply_change_to_project do
     subproject = new_subproject("subproj", framework_filename)
 
     add_existing_subproject_to_project(base_project, subproject, framework_filename)
-    base_project.save
 
     theirs_project_path = make_temp_directory("theirs", ".xcodeproj")
     theirs_project = Xcodeproj::Project.new(theirs_project_path)
     add_existing_subproject_to_project(theirs_project, subproject, framework_filename)
-    theirs_project.save
-    ours_project = create_copy_of_project(theirs_project_path, "other_theirs")
+    ours_project = create_copy_of_project(theirs_project, "other_theirs")
 
     subproject.new_target("com.apple.product-type.library.static", "bari", :ios)
     ours_project.root_object.project_references[0][:product_group] <<
@@ -1586,8 +1515,7 @@ describe Kintsugi, :apply_change_to_project do
     base_project = Xcodeproj::Project.new(base_project_path)
     base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
 
-    base_project.save
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     variant_group = theirs_project.main_group.new_variant_group("foo.strings")
     variant_group.new_reference("Base").last_known_file_type = "text.plist.strings"
@@ -1602,9 +1530,8 @@ describe Kintsugi, :apply_change_to_project do
 
   it "adds build configuration list" do
     base_project.root_object.build_configuration_list = nil
-    base_project.save
 
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.root_object.build_configuration_list =
       theirs_project.new(Xcodeproj::Project::XCConfigurationList)
 
@@ -1615,7 +1542,7 @@ describe Kintsugi, :apply_change_to_project do
   end
 
   it "removes build configuration list" do
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
     theirs_project.build_configuration_list.remove_from_project
 
     changes_to_apply = get_diff(theirs_project, base_project)
@@ -1629,8 +1556,7 @@ describe Kintsugi, :apply_change_to_project do
     base_project = Xcodeproj::Project.new(base_project_path)
     base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
 
-    base_project.save
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     theirs_project.root_object.product_ref_group.new_group("foo")
 
@@ -1646,8 +1572,7 @@ describe Kintsugi, :apply_change_to_project do
     base_project = Xcodeproj::Project.new(base_project_path)
     base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
 
-    base_project.save
-    theirs_project = create_copy_of_project(base_project.path, "theirs")
+    theirs_project = create_copy_of_project(base_project, "theirs")
 
     variant_group = theirs_project.root_object.product_ref_group.new_variant_group("foo.strings")
     variant_group.new_reference("Base").last_known_file_type = "text.plist.strings"
@@ -1662,13 +1587,12 @@ describe Kintsugi, :apply_change_to_project do
   describe "avoiding duplicate references to the same component" do
     it "avoids adding file reference that already exists" do
       base_project.main_group.new_reference("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.new_reference("bar")
 
       changes_to_apply = get_diff(theirs_project, base_project)
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
@@ -1676,13 +1600,12 @@ describe Kintsugi, :apply_change_to_project do
 
     it "avoids adding group that already exists" do
       base_project.main_group.new_group("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.new_group("bar")
 
       changes_to_apply = get_diff(theirs_project, base_project)
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
@@ -1690,24 +1613,23 @@ describe Kintsugi, :apply_change_to_project do
 
     it "avoids adding variant group that already exists" do
       base_project.main_group.new_variant_group("bar")
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.main_group.new_variant_group("bar")
 
       changes_to_apply = get_diff(theirs_project, base_project)
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
     end
 
     it "avoids adding subproject that already exists" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
 
-      ours_project = create_copy_of_project(base_project.path, "ours")
+      ours_project = create_copy_of_project(base_project, "ours")
       add_existing_subproject_to_project(ours_project, subproject, "foo")
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -1721,14 +1643,13 @@ describe Kintsugi, :apply_change_to_project do
       file_reference = base_project.main_group.new_reference("bar")
       target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
       target.frameworks_build_phase.add_file_reference(file_reference)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       file_reference = theirs_project.main_group.new_reference("bar")
       theirs_project.targets[0].frameworks_build_phase.add_file_reference(file_reference)
 
       changes_to_apply = get_diff(theirs_project, base_project)
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
@@ -1737,9 +1658,8 @@ describe Kintsugi, :apply_change_to_project do
     it "avoids adding reference proxy that already exists" do
       framework_filename = "baz"
       subproject = add_new_subproject_to_project(base_project, "subproj", framework_filename)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       theirs_project.root_object.project_references[0][:product_group] <<
         create_reference_proxy_from_product_reference(theirs_project,
@@ -1749,7 +1669,7 @@ describe Kintsugi, :apply_change_to_project do
 
       changes_to_apply = get_diff(theirs_project, base_project)
 
-      other_project = create_copy_of_project(base_project.path, "theirs")
+      other_project = create_copy_of_project(base_project, "theirs")
       described_class.apply_change_to_project(other_project, changes_to_apply, theirs_project)
 
       expect(other_project).to be_equivalent_to_project(base_project)
@@ -1757,21 +1677,19 @@ describe Kintsugi, :apply_change_to_project do
 
     it "keeps array if adding string value that already exists in array" do
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
-      base_project.save
 
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
       theirs_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["HEADER_SEARCH_PATHS"] = "bar"
       end
       changes_to_apply = get_diff(theirs_project, base_project)
 
-      ours_project = create_copy_of_project(base_project.path, "ours")
+      ours_project = create_copy_of_project(base_project, "ours")
       ours_project.targets[0].build_configurations.each do |configuration|
         configuration.build_settings["HEADER_SEARCH_PATHS"] = %w[bar foo]
       end
-      ours_project.save
 
-      expected_project = create_copy_of_project(ours_project.path, "expected")
+      expected_project = create_copy_of_project(ours_project, "expected")
 
       described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
@@ -1789,11 +1707,11 @@ describe Kintsugi, :apply_change_to_project do
     end
 
     it "adds subproject that already exists" do
-      theirs_project = create_copy_of_project(base_project.path, "theirs")
+      theirs_project = create_copy_of_project(base_project, "theirs")
 
       subproject = add_new_subproject_to_project(theirs_project, "foo", "foo")
 
-      ours_project = create_copy_of_project(base_project.path, "ours")
+      ours_project = create_copy_of_project(base_project, "ours")
       add_existing_subproject_to_project(ours_project, subproject, "foo")
 
       changes_to_apply = get_diff(theirs_project, base_project)
@@ -1825,14 +1743,13 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(0)
 
         base_project.main_group.find_subpath("new_group", true)
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project["new_group"].find_subpath("sub_group", true)
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("new_group").remove_from_project
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -1843,17 +1760,15 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(1)
 
         base_project.main_group.find_subpath("new_group", true)
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project["new_group"].find_subpath("sub_group", true)
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("new_group").remove_from_project
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
         expect(ours_project).to be_equivalent_to_project(expected_project)
@@ -1865,14 +1780,13 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(0)
 
         base_project.main_group.find_subpath("new_group", true)
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project["new_group"].new_reference("foo/bar")
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("new_group").remove_from_project
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -1883,17 +1797,15 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(1)
 
         base_project.main_group.find_subpath("new_group", true)
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project["new_group"].new_reference("foo/bar")
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("new_group").remove_from_project
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
         expect(ours_project).to be_equivalent_to_project(expected_project)
@@ -1905,12 +1817,11 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(0)
 
         base_project.main_group.find_subpath("some_group", true)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("some_group").remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_subpath("some_group").source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -1924,18 +1835,16 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(1)
 
         base_project.main_group.find_subpath("some_group", true)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath("some_group").remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_subpath("some_group").source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
@@ -1948,12 +1857,11 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(0)
 
         base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].product_reference.remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].product_reference.source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -1967,18 +1875,16 @@ describe Kintsugi, :apply_change_to_project do
         test_prompt.choose_option(1)
 
         base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].product_reference.remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].product_reference.source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
@@ -1995,16 +1901,15 @@ describe Kintsugi, :apply_change_to_project do
         file_reference = base_project.main_group.new_reference(file_reference_name)
         target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
         target.source_build_phase.add_file_reference(file_reference)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         build_file = ours_project.targets[0].source_build_phase.files[-1]
         # Removing the build file first is done because prior to xcodeproj 1.22, the build file was
         # not removed when its file reference was removed.
         build_file.remove_from_project
         ours_project.main_group.find_subpath(file_reference_name).remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_subpath(file_reference_name).source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -2022,18 +1927,16 @@ describe Kintsugi, :apply_change_to_project do
         file_reference = base_project.main_group.new_reference(file_reference_name)
         target = base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
         target.source_build_phase.add_file_reference(file_reference)
-        base_project.save
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.main_group.find_subpath(file_reference_name).remove_from_project
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.main_group.find_subpath(file_reference_name).source_tree = "SDKROOT"
 
         changes_to_apply = get_diff(theirs_project, base_project)
 
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
@@ -2050,14 +1953,13 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "bar"}
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "baz"}
         end
@@ -2076,19 +1978,17 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "bar"}
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "baz"}
         end
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         changes_to_apply = get_diff(theirs_project, base_project)
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -2106,14 +2006,13 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "bar"}
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "baz"}
         end
@@ -2121,7 +2020,7 @@ describe Kintsugi, :apply_change_to_project do
         changes_to_apply = get_diff(theirs_project, base_project)
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
 
-        expected_project = create_copy_of_project(base_project.path, "expected")
+        expected_project = create_copy_of_project(base_project, "expected")
         expected_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {}
         end
@@ -2136,19 +2035,17 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "bar"}
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = nil
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings = {"HEADER_SEARCH_PATHS" => "baz"}
         end
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         changes_to_apply = get_diff(theirs_project, base_project)
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -2166,14 +2063,13 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "old"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "new"
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "existing"
         end
@@ -2192,19 +2088,17 @@ describe Kintsugi, :apply_change_to_project do
         base_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "old"
         end
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "new"
         end
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].build_configurations.each do |configuration|
           configuration.build_settings["PRODUCT_NAME"] = "existing"
         end
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         changes_to_apply = get_diff(theirs_project, base_project)
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -2219,12 +2113,11 @@ describe Kintsugi, :apply_change_to_project do
 
         base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
         base_project.targets[0].new_shell_script_build_phase("bar")
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].shell_script_build_phases[0].remove_from_project
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].shell_script_build_phases[0].shell_script = "foo"
 
         changes_to_apply = get_diff(theirs_project, base_project)
@@ -2238,16 +2131,14 @@ describe Kintsugi, :apply_change_to_project do
 
         base_project.new_target("com.apple.product-type.library.static", "foo", :ios)
         base_project.targets[0].new_shell_script_build_phase("bar")
-        base_project.save
 
-        theirs_project = create_copy_of_project(base_project.path, "theirs")
+        theirs_project = create_copy_of_project(base_project, "theirs")
         theirs_project.targets[0].shell_script_build_phases[0].remove_from_project
 
-        ours_project = create_copy_of_project(base_project.path, "ours")
+        ours_project = create_copy_of_project(base_project, "ours")
         ours_project.targets[0].shell_script_build_phases[0].shell_script = "foo"
 
-        ours_project.save
-        expected_project = create_copy_of_project(ours_project.path, "expected")
+        expected_project = create_copy_of_project(ours_project, "expected")
 
         changes_to_apply = get_diff(theirs_project, base_project)
         described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
@@ -2257,9 +2148,9 @@ describe Kintsugi, :apply_change_to_project do
     end
   end
 
-  def create_copy_of_project(project_path, new_project_prefix)
+  def create_copy_of_project(project, new_project_prefix)
     copied_project_path = make_temp_directory(new_project_prefix, ".xcodeproj")
-    FileUtils.cp(File.join(project_path, "project.pbxproj"), copied_project_path)
+    project.save(copied_project_path)
     Xcodeproj::Project.open(copied_project_path)
   end
 
