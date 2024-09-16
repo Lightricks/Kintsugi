@@ -136,6 +136,16 @@ module Xcodeproj
           " #{display_name.delete_prefix("plugin:")} "
         end
       end
+
+      # The original implementation is  `" #{isa} \"#{File.basename(display_name)}\"` so that means that if we have a
+      # relative path which is Path/To/Package, the item will be serialized as `XCLocalSwiftPackageReference "Package"`.
+      # And Xcode will automatically fix this to be `XCLocalSwiftPackageReference "Path/To/Package"`.
+      # So, we need to patch the implementation and make sure the whole path is used.
+      class XCLocalSwiftPackageReference
+        def ascii_plist_annotation
+          " #{isa} \"#{display_name}\" "
+        end
+      end
     end
   end
 
