@@ -23,7 +23,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "tty-prompt", "~> 0"
-  spec.add_dependency "xcodeproj", ">= 1.19.0", "<= 1.27.0"
+  spec.add_dependency "xcodeproj", ">= 1.26.0", "<= 1.27.0"
 
   spec.add_development_dependency "git", "~> 1.11"
   spec.add_development_dependency "rake", "~> 13.0"
