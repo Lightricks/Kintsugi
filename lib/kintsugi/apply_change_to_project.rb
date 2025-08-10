@@ -107,7 +107,7 @@ module Kintsugi
 
     def apply_group_additions(project, additions, force_create_containing_group: false)
       additions.each do |change, path|
-        next unless %w[PBXGroup PBXVariantGroup].include?(change["isa"])
+        next unless %w[PBXGroup PBXVariantGroup PBXFileSystemSynchronizedRootGroup].include?(change["isa"])
 
         group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
         containing_group = project.group_or_file_at_path(path)
@@ -652,6 +652,8 @@ module Kintsugi
         add_file_reference(component, change, change_path)
       when "PBXGroup"
         add_group(component, change, change_path)
+      when "PBXFileSystemSynchronizedRootGroup"
+        add_file_system_synchronized_root_group(component, change, change_path)
       when "PBXContainerItemProxy"
         add_container_item_proxy(component, change, change_path)
       when "PBXTargetDependency"
@@ -1010,6 +1012,22 @@ module Kintsugi
         # Adding groups to groups is handled by another part of the code.
       else
         raise MergeError, "Trying to add group to an unsupported component type " \
+                          "#{containing_component.isa}. Change is: #{change}. Change path: " \
+                          "#{change_path}"
+      end
+    end
+
+    def add_file_system_synchronized_root_group(containing_component, change, change_path)
+      case containing_component
+      when Xcodeproj::Project::ObjectDictionary
+        # It is assumed that an `ObjectDictionary` always represents a project reference.
+        new_group = containing_component[:project_ref].project.new(Xcodeproj::Project::PBXFileSystemSynchronizedRootGroup)
+        containing_component[:product_group] = new_group
+        add_attributes_to_component(new_group, change, change_path)
+      when Xcodeproj::Project::PBXGroup
+        # Adding file system synchronized root groups to groups is handled by another part of the code.
+      else
+        raise MergeError, "Trying to add file system synchronized root group to an unsupported component type " \
                           "#{containing_component.isa}. Change is: #{change}. Change path: " \
                           "#{change_path}"
       end
