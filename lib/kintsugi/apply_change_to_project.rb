@@ -728,38 +728,53 @@ module Kintsugi
     end
 
     def add_remote_swift_package_reference(containing_component, change, change_path)
-      remote_swift_package_reference =
-        containing_component.project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
-      add_attributes_to_component(remote_swift_package_reference, change, change_path)
+      project = containing_component.project
+      # A remote package reference is shared project-wide: `rootObject.packageReferences` and every
+      # product dependency's `package` point at the same object. The diff adds it from each place,
+      # so reuse an equivalent reference already in the project rather than adding a duplicate.
+      remote_swift_package_reference = existing_remote_swift_package_reference(project, change)
+
+      if remote_swift_package_reference.nil?
+        remote_swift_package_reference =
+          project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+        add_attributes_to_component(remote_swift_package_reference, change, change_path)
+      end
 
       case containing_component
       when Xcodeproj::Project::XCSwiftPackageProductDependency
         containing_component.package = remote_swift_package_reference
       when Xcodeproj::Project::PBXProject
-        containing_component.package_references << remote_swift_package_reference
+        references = containing_component.package_references
+        unless references.any? { |reference| reference.equal?(remote_swift_package_reference) }
+          references << remote_swift_package_reference
+        end
       else
         raise MergeError, "Trying to add remote swift package reference to an unsupported " \
                           "component type #{containing_component.isa}. Change is: #{change}"
       end
     end
 
-    def add_swift_package_product_dependency(containing_component, change, change_path)
-      project = containing_component.project
-      swift_package_product_dependency =
-        project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
-      add_attributes_to_component(swift_package_product_dependency, change, change_path)
+    # An existing remote swift package reference in `project` whose tree hash equals `change`, else
+    # nil. Package references are shared project-wide, so the lookup is not scoped to a target.
+    def existing_remote_swift_package_reference(project, change)
+      project.objects.find do |object|
+        object.isa == "XCRemoteSwiftPackageReference" && object.to_tree_hash == change
+      end
+    end
 
+    def add_swift_package_product_dependency(containing_component, change, change_path)
       # Within a single target, the target's `packageProductDependencies` entry and the `productRef`
       # of the build file that links the product are the same object. The diff adds it from both
       # places, so reuse an equivalent dependency already present in the SAME target rather than
       # adding a duplicate. The reuse is scoped to the target because Xcode keeps a separate
-      # dependency object per target.
+      # dependency object per target. Looking up before creating avoids adding a throwaway object.
       target = owning_native_target(containing_component)
-      existing_dependency =
-        existing_package_product_dependency(target, swift_package_product_dependency)
-      unless existing_dependency.nil?
-        swift_package_product_dependency.remove_from_project
-        swift_package_product_dependency = existing_dependency
+      swift_package_product_dependency = existing_package_product_dependency(target, change)
+
+      if swift_package_product_dependency.nil?
+        swift_package_product_dependency =
+          containing_component.project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+        add_attributes_to_component(swift_package_product_dependency, change, change_path)
       end
 
       case containing_component
@@ -790,16 +805,14 @@ module Kintsugi
       end
     end
 
-    # An existing package product dependency of `target` (either in its `packageProductDependencies`
-    # or referenced by one of its build files) equivalent to `dependency`, or nil if there is none.
-    def existing_package_product_dependency(target, dependency)
+    # An existing package product dependency of `target` (in its `packageProductDependencies` or
+    # referenced by one of its build files) whose tree hash equals `change`, else nil.
+    def existing_package_product_dependency(target, change)
       return nil if target.nil?
 
       candidates = target.package_product_dependencies.to_a +
                    target.build_phases.flat_map(&:files).map(&:product_ref).compact
-      candidates.uniq.find do |candidate|
-        !candidate.equal?(dependency) && candidate.to_tree_hash == dependency.to_tree_hash
-      end
+      candidates.uniq.find { |candidate| candidate.to_tree_hash == change }
     end
 
     def add_reference_proxy(containing_component, change, change_path)

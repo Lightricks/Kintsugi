@@ -681,6 +681,42 @@ describe Kintsugi, :apply_change_to_project do
         .to equal(base_project.targets[0].package_product_dependencies.first)
     end
 
+    it "shares one package reference between packageReferences and the product dependency" do
+      # The shape Xcode writes when adding a package: the package reference sits on
+      # rootObject.packageReferences, the product dependency's `package` points at that same object,
+      # and the build file's product_ref points at the dependency.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      package_reference = theirs_project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+      package_reference.repositoryURL = "https://github.com/example/pkg"
+      package_reference.requirement = {"kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0"}
+      theirs_project.root_object.package_references << package_reference
+      dependency = theirs_project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+      dependency.package = package_reference
+      dependency.product_name = "Example"
+      theirs_project.targets[0].package_product_dependencies << dependency
+      build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      build_file.product_ref = dependency
+      theirs_project.targets[0].frameworks_build_phase.files << build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # A single package reference object, shared by rootObject.packageReferences and the
+      # dependency's `package`; a single dependency, linked by the build file.
+      package_references = base_project.objects.select { |o| o.isa == "XCRemoteSwiftPackageReference" }
+      dependencies = base_project.objects.select { |o| o.isa == "XCSwiftPackageProductDependency" }
+      expect(package_references.count).to eq(1)
+      expect(dependencies.count).to eq(1)
+      expect(base_project.root_object.package_references.first).to equal(package_references.first)
+      expect(dependencies.first.package).to equal(package_references.first)
+      product_build_file =
+        base_project.targets[0].frameworks_build_phase.files.find(&:product_ref)
+      expect(product_build_file.product_ref).to equal(dependencies.first)
+    end
+
     it "keeps a separate package product dependency per target for the same product" do
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
 
