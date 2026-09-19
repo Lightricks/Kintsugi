@@ -644,6 +644,174 @@ describe Kintsugi, :apply_change_to_project do
       expect(base_project).to be_equivalent_to_project(theirs_project)
     end
 
+    it "adds a build file that references a swift package product" do
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      build_file.product_ref = create_swift_package_product_dependency(theirs_project)
+      theirs_project.targets[0].frameworks_build_phase.files << build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+    end
+
+    it "links a target and its build file to the same package product dependency" do
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      dependency = create_swift_package_product_dependency(theirs_project)
+      theirs_project.targets[0].package_product_dependencies << dependency
+      build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      build_file.product_ref = dependency
+      theirs_project.targets[0].frameworks_build_phase.files << build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The dependency is shared, as Xcode writes it: the build file's product_ref is the very same
+      # object as the target's package product dependency, not a duplicate.
+      dependencies = base_project.objects.select { |o| o.isa == "XCSwiftPackageProductDependency" }
+      expect(dependencies.count).to eq(1)
+      product_build_file =
+        base_project.targets[0].frameworks_build_phase.files.find(&:product_ref)
+      expect(product_build_file.product_ref)
+        .to equal(base_project.targets[0].package_product_dependencies.first)
+    end
+
+    it "shares one package reference between packageReferences and the product dependency" do
+      # The shape Xcode writes when adding a package: the package reference sits on
+      # rootObject.packageReferences, the product dependency's `package` points at that same object,
+      # and the build file's product_ref points at the dependency.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      package_reference = theirs_project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+      package_reference.repositoryURL = "https://github.com/example/pkg"
+      package_reference.requirement = {"kind" => "upToNextMajorVersion", "minimumVersion" => "1.0.0"}
+      theirs_project.root_object.package_references << package_reference
+      dependency = theirs_project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+      dependency.package = package_reference
+      dependency.product_name = "Example"
+      theirs_project.targets[0].package_product_dependencies << dependency
+      build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      build_file.product_ref = dependency
+      theirs_project.targets[0].frameworks_build_phase.files << build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # A single package reference object, shared by rootObject.packageReferences and the
+      # dependency's `package`; a single dependency, linked by the build file.
+      package_references = base_project.objects.select { |o| o.isa == "XCRemoteSwiftPackageReference" }
+      dependencies = base_project.objects.select { |o| o.isa == "XCSwiftPackageProductDependency" }
+      expect(package_references.count).to eq(1)
+      expect(dependencies.count).to eq(1)
+      expect(base_project.root_object.package_references.first).to equal(package_references.first)
+      expect(dependencies.first.package).to equal(package_references.first)
+      product_build_file =
+        base_project.targets[0].frameworks_build_phase.files.find(&:product_ref)
+      expect(product_build_file.product_ref).to equal(dependencies.first)
+    end
+
+    it "keeps a separate package product dependency per target for the same product" do
+      base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.targets.each do |target|
+        dependency = create_swift_package_product_dependency(theirs_project)
+        target.package_product_dependencies << dependency
+        build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+        build_file.product_ref = dependency
+        target.frameworks_build_phase.files << build_file
+      end
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # Each target keeps its own dependency object -- Xcode does not share one across targets -- but
+      # within a target the build file's product_ref is that same object.
+      dependencies = base_project.objects.select { |o| o.isa == "XCSwiftPackageProductDependency" }
+      expect(dependencies.count).to eq(2)
+      base_project.targets.each do |target|
+        product_build_file = target.frameworks_build_phase.files.find(&:product_ref)
+        expect(product_build_file.product_ref).to equal(target.package_product_dependencies.first)
+      end
+    end
+
+    it "keeps two products that share a name but come from different packages" do
+      base_dependency = create_swift_package_product_dependency(base_project)
+      base_project.targets[0].package_product_dependencies << base_dependency
+      base_build_file = base_project.new(Xcodeproj::Project::PBXBuildFile)
+      base_build_file.product_ref = base_dependency
+      base_project.targets[0].frameworks_build_phase.files << base_build_file
+
+      # theirs links a second product with the SAME product name but from a different package.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      other_package = theirs_project.new(Xcodeproj::Project::XCRemoteSwiftPackageReference)
+      other_package.repositoryURL = "http://other"
+      other_dependency = theirs_project.new(Xcodeproj::Project::XCSwiftPackageProductDependency)
+      other_dependency.product_name = "foo"
+      other_dependency.package = other_package
+      theirs_project.targets[0].package_product_dependencies << other_dependency
+      other_build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      other_build_file.product_ref = other_dependency
+      theirs_project.targets[0].frameworks_build_phase.files << other_build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # Both same-named products are distinct (different packages), so both survive, each linked by
+      # its own build file -- a name-only dedup would have dropped the second build file.
+      dependencies = base_project.objects.select { |o| o.isa == "XCSwiftPackageProductDependency" }
+      expect(dependencies.count).to eq(2)
+      product_build_files =
+        base_project.targets[0].frameworks_build_phase.files.select(&:product_ref)
+      expect(product_build_files.count).to eq(2)
+    end
+
+    it "attributes an added product build file to its own target despite a bare build file elsewhere" do
+      base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
+      foo = base_project.targets.find { |target| target.display_name == "foo" }
+      # foo already links the product, and also carries a bare (reference-less) build file, which is
+      # value-equal to any freshly-created build file.
+      foo.package_product_dependencies << create_swift_package_product_dependency(base_project)
+      foo_build_file = base_project.new(Xcodeproj::Project::PBXBuildFile)
+      foo_build_file.product_ref = foo.package_product_dependencies.first
+      foo.frameworks_build_phase.files << foo_build_file
+      foo.frameworks_build_phase.files << base_project.new(Xcodeproj::Project::PBXBuildFile)
+
+      # theirs links the same product in bar.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_bar = theirs_project.targets.find { |target| target.display_name == "bar" }
+      theirs_bar.package_product_dependencies << create_swift_package_product_dependency(theirs_project)
+      bar_build_file = theirs_project.new(Xcodeproj::Project::PBXBuildFile)
+      bar_build_file.product_ref = theirs_bar.package_product_dependencies.first
+      theirs_bar.frameworks_build_phase.files << bar_build_file
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # bar's build file must link bar's own dependency, not foo's (a value-based target lookup would
+      # attribute it to foo via foo's bare build file, collapsing the two targets' dependencies).
+      merged_bar = base_project.targets.find { |target| target.display_name == "bar" }
+      bar_reference = merged_bar.frameworks_build_phase.files.map(&:product_ref).compact.first
+      expect(merged_bar.package_product_dependencies).to include(bar_reference)
+      expect(base_project.objects.count { |o| o.isa == "XCSwiftPackageProductDependency" }).to eq(2)
+    end
+
     it "changes framework from reference proxy to file reference" do
       framework_filename = "baz"
 
