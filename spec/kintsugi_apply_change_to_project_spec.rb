@@ -2426,6 +2426,391 @@ describe Kintsugi, :apply_change_to_project do
         .to eq(0)
     end
 
+    it "converts an existing group into a file system synchronized root group" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |child| child.display_name == "Routines" }
+                    .remove_from_project
+      folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_project.targets[0].file_system_synchronized_groups << folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The group is replaced in place: no `PBXGroup` named "Routines" remains, and the single
+      # buildable folder is the exact object linked to the target (not a duplicate with the same
+      # attributes).
+      expect(base_project.objects.any? { |o| o.isa == "PBXGroup" && o.display_name == "Routines" })
+        .to be false
+      folders = base_project.objects.select { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" }
+      expect(folders.count).to eq(1)
+      expect(base_project.targets[0].file_system_synchronized_groups.first).to equal(folders.first)
+    end
+
+    it "converts a group with nested children into a file system synchronized root group" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+      detail = routines.new_group("Detail")
+      detail.new_file("Routines/Detail/Detail.swift")
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |child| child.display_name == "Routines" }
+                    .remove_from_project
+      folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_project.targets[0].file_system_synchronized_groups << folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The whole subtree (the group and its nested "Detail" subgroup) is gone, replaced by one
+      # buildable folder. Removing the nested subgroup exercises the buildable-folder-safe path
+      # lookup, which resolves the vanished nested path to a no-op instead of raising.
+      expect(base_project.objects.any? { |o| o.isa == "PBXGroup" && o.display_name == "Routines" })
+        .to be false
+      expect(base_project.objects.any? { |o| o.isa == "PBXGroup" && o.display_name == "Detail" })
+        .to be false
+      expect(base_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(1)
+    end
+
+    it "converts a group nested under another group into a synchronized root group" do
+      scenes = base_project.main_group.new_group("Scenes")
+      routines = scenes.new_group("Routines")
+      routines.new_file("Scenes/Routines/Routine.swift")
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_scenes = theirs_project.main_group.children.find { |c| c.display_name == "Scenes" }
+      theirs_scenes.children.find { |c| c.display_name == "Routines" }.remove_from_project
+      folder = theirs_project.new(Xcodeproj::Project::PBXFileSystemSynchronizedRootGroup)
+      folder.source_tree = "<group>"
+      folder.path = "Routines"
+      theirs_scenes.children << folder
+      theirs_project.targets[0].file_system_synchronized_groups << folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The folder lands at the same location in the tree, nested under the "Scenes" group.
+      scenes_group = base_project.main_group.children.find { |c| c.display_name == "Scenes" }
+      folder_in_base =
+        base_project.objects.find { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" }
+      expect(scenes_group.children).to include(folder_in_base)
+    end
+
+    it "converts a synchronized root group back into a plain group" do
+      folder = add_synchronized_root_group(base_project, "Routines")
+      base_project.targets[0].file_system_synchronized_groups << folder
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_folder = theirs_project.main_group.children
+                                    .find { |child| child.display_name == "Routines" }
+      theirs_project.targets[0].file_system_synchronized_groups.delete(theirs_folder)
+      theirs_folder.remove_from_project
+      restored_group = theirs_project.main_group.new_group("Routines")
+      restored_group.new_file("Routines/Routine.swift")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The buildable folder is gone, replaced by a plain group whose restored child file was added
+      # into the new group rather than into the vanished folder (the reverse-direction crash).
+      expect(base_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(0)
+      group = base_project.main_group.children.find { |child| child.display_name == "Routines" }
+      expect(group.isa).to eq("PBXGroup")
+      expect(group.children.map(&:display_name)).to include("Routine.swift")
+    end
+
+    it "does not leave a dangling build file when a local edit diverges during conversion" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      # ours independently adds a file to the same group and compiles it into the target.
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_routines = ours_project.main_group.children
+                                  .find { |child| child.display_name == "Routines" }
+      local_file = ours_routines.new_file("Routines/LocalOnly.swift")
+      ours_project.targets[0].source_build_phase.add_file_reference(local_file)
+
+      # theirs converts that same group into a buildable folder.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |child| child.display_name == "Routines" }
+                    .remove_from_project
+      folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_project.targets[0].file_system_synchronized_groups << folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+
+      # The group became a buildable folder (which includes its files implicitly). No build file is
+      # left referencing a file reference that is no longer reachable in the project tree.
+      expect(ours_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(1)
+      reachable_file_references =
+        ours_project.main_group.recursive_children.grep(Xcodeproj::Project::PBXFileReference)
+      dangling_build_files =
+        ours_project.objects.select { |o| o.isa == "PBXBuildFile" }.reject do |build_file|
+          build_file.file_ref.nil? || reachable_file_references.include?(build_file.file_ref)
+        end
+      expect(dangling_build_files).to be_empty
+    end
+
+    it "does not treat an unrelated in-place isa change as a buildable-folder conversion" do
+      variant_group = base_project.new(Xcodeproj::Project::PBXVariantGroup)
+      variant_group.name = "Strings"
+      base_project.main_group.children << variant_group
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |child| child.display_name == "Strings" }
+                    .remove_from_project
+      theirs_project.main_group.new_group("Strings")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      # The narrowed conversion guard leaves this to the normal path, which surfaces the unsupported
+      # in-place isa change rather than silently discarding the node through the remove-and-recreate
+      # path that is reserved for buildable-folder conversions.
+      expect {
+        described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
+    it "preserves a local file when both sides convert the same folder back into a group" do
+      folder = add_synchronized_root_group(base_project, "Routines")
+      base_project.targets[0].file_system_synchronized_groups << folder
+
+      # ours reverts the folder to a plain group and adds and compiles a local file.
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_folder = ours_project.main_group.children.find { |c| c.display_name == "Routines" }
+      ours_project.targets[0].file_system_synchronized_groups.delete(ours_folder)
+      ours_folder.remove_from_project
+      ours_group = ours_project.main_group.new_group("Routines")
+      local_file = ours_group.new_file("Routines/LocalOnly.swift")
+      ours_project.targets[0].source_build_phase.add_file_reference(local_file)
+
+      # theirs reverts the same folder to a plain group and adds a different file.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_folder = theirs_project.main_group.children.find { |c| c.display_name == "Routines" }
+      theirs_project.targets[0].file_system_synchronized_groups.delete(theirs_folder)
+      theirs_folder.remove_from_project
+      theirs_group = theirs_project.main_group.new_group("Routines")
+      theirs_group.new_file("Routines/Routine.swift")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+
+      # Both sides' files survive: the local file is merged into the group rather than discarded by
+      # the conversion pre-pass, and its compile membership is preserved.
+      group = ours_project.main_group.children.find { |c| c.display_name == "Routines" }
+      expect(group.isa).to eq("PBXGroup")
+      expect(group.children.map(&:display_name))
+        .to contain_exactly("LocalOnly.swift", "Routine.swift")
+      compiled = ours_project.targets[0].source_build_phase.files.map { |bf| bf.file_ref&.display_name }
+      expect(compiled).to include("LocalOnly.swift")
+      expect(ours_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(0)
+    end
+
+    it "does not fail when both sides convert the same group into a buildable folder" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_project.main_group.children
+                  .find { |c| c.display_name == "Routines" }
+                  .remove_from_project
+      ours_folder = add_synchronized_root_group(ours_project, "Routines")
+      ours_project.targets[0].file_system_synchronized_groups << ours_folder
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |c| c.display_name == "Routines" }
+                    .remove_from_project
+      theirs_folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_project.targets[0].file_system_synchronized_groups << theirs_folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+
+      expect(ours_project).to be_equivalent_to_project(theirs_project)
+      expect(ours_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(1)
+    end
+
+    it "surfaces a conflict when both sides convert the same node but with diverging attributes" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      # ours converts the group into a buildable folder.
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_project.main_group.children
+                  .find { |c| c.display_name == "Routines" }
+                  .remove_from_project
+      ours_folder = add_synchronized_root_group(ours_project, "Routines")
+      ours_project.targets[0].file_system_synchronized_groups << ours_folder
+
+      # theirs converts it into a buildable folder too, but sets a diverging folder attribute.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |c| c.display_name == "Routines" }
+                    .remove_from_project
+      theirs_folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_folder.explicit_file_types = {"*.md" => "text"}
+      theirs_project.targets[0].file_system_synchronized_groups << theirs_folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      # The diverging attribute can't be merged onto the folder this side already holds, so rather
+      # than dropping it silently the merge is surfaced as a conflict for the user to resolve.
+      expect {
+        described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+      }.to raise_error(Kintsugi::MergeError)
+    end
+
+    it "merges when both sides convert the same node with set attributes in a different order" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_project.main_group.children
+                  .find { |c| c.display_name == "Routines" }
+                  .remove_from_project
+      ours_folder = add_synchronized_root_group(ours_project, "Routines")
+      ours_folder.explicit_folders = %w[A B]
+      ours_project.targets[0].file_system_synchronized_groups << ours_folder
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |c| c.display_name == "Routines" }
+                    .remove_from_project
+      theirs_folder = add_synchronized_root_group(theirs_project, "Routines")
+      theirs_folder.explicit_folders = %w[B A]
+      theirs_project.targets[0].file_system_synchronized_groups << theirs_folder
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      # The two folders hold the same set of explicit folders, only in a different order, which is
+      # not a real divergence -- the merge must not raise a spurious conflict.
+      expect {
+        described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+      }.not_to raise_error
+    end
+
+    it "adds a file under a path this side converted to a buildable folder without failing" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      # ours converts the group into a buildable folder.
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_project.main_group.children
+                  .find { |c| c.display_name == "Routines" }
+                  .remove_from_project
+      folder = add_synchronized_root_group(ours_project, "Routines")
+      ours_project.targets[0].file_system_synchronized_groups << folder
+
+      # theirs keeps the plain group and adds a new file into it (an ordinary, non-conversion edit).
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_project.main_group.children
+                    .find { |c| c.display_name == "Routines" }
+                    .new_file("Routines/NewFile.swift")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      # The added file's destination is now a buildable folder, which includes files implicitly, so
+      # the addition must be a no-op rather than raising when it reaches the folder.
+      expect {
+        described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+      }.not_to raise_error
+
+      expect(ours_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(1)
+      expect(ours_project.objects.any? { |o| o.isa == "PBXGroup" && o.display_name == "Routines" })
+        .to be false
+      expect(ours_project.objects.any? do |o|
+        o.isa == "PBXFileReference" && o.display_name == "NewFile.swift"
+      end).to be false
+    end
+
+    it "adds a subgroup and nested file under a converted buildable folder without failing" do
+      routines = base_project.main_group.new_group("Routines")
+      routines.new_file("Routines/Routine.swift")
+
+      # ours converts the group into a buildable folder.
+      ours_project = create_copy_of_project(base_project, "ours")
+      ours_project.main_group.children
+                  .find { |c| c.display_name == "Routines" }
+                  .remove_from_project
+      folder = add_synchronized_root_group(ours_project, "Routines")
+      ours_project.targets[0].file_system_synchronized_groups << folder
+
+      # theirs keeps the plain group and adds a nested subgroup containing a file.
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_sub = theirs_project.main_group.children
+                                 .find { |c| c.display_name == "Routines" }
+                                 .new_group("Sub")
+      theirs_sub.new_file("Routines/Sub/Deep.swift")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+
+      # The subgroup and the file nested under it both land at a path that is now a buildable folder,
+      # which includes its descendants implicitly, so both additions must be no-ops rather than
+      # dereferencing `children` on the folder.
+      expect {
+        described_class.apply_change_to_project(ours_project, changes_to_apply, theirs_project)
+      }.not_to raise_error
+
+      expect(ours_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(1)
+      expect(ours_project.objects.any? { |o| o.isa == "PBXGroup" && o.display_name == "Sub" })
+        .to be false
+      expect(ours_project.objects.any? do |o|
+        o.isa == "PBXFileReference" && o.display_name == "Deep.swift"
+      end).to be false
+    end
+
+    it "converts a folder that carried build file exceptions back into a plain group" do
+      folder = add_synchronized_root_group(base_project, "Routines")
+      base_project.targets[0].file_system_synchronized_groups << folder
+      exception_set =
+        base_project.new(Xcodeproj::Project::PBXFileSystemSynchronizedBuildFileExceptionSet)
+      exception_set.target = base_project.targets[0]
+      exception_set.membership_exceptions = ["Excluded.swift"]
+      folder.exceptions << exception_set
+
+      theirs_project = create_copy_of_project(base_project, "theirs")
+      theirs_folder = theirs_project.main_group.children.find { |c| c.display_name == "Routines" }
+      theirs_project.targets[0].file_system_synchronized_groups.delete(theirs_folder)
+      theirs_folder.remove_from_project
+      theirs_group = theirs_project.main_group.new_group("Routines")
+      theirs_group.new_file("Routines/Routine.swift")
+
+      changes_to_apply = get_diff(theirs_project, base_project)
+      described_class.apply_change_to_project(base_project, changes_to_apply, theirs_project)
+
+      expect(base_project).to be_equivalent_to_project(theirs_project)
+
+      # The folder is gone, and its exception set is torn down with it -- no orphan remains.
+      expect(base_project.objects.count { |o| o.isa == "PBXFileSystemSynchronizedRootGroup" })
+        .to eq(0)
+      expect(base_project.objects.any? do |o|
+        o.isa == "PBXFileSystemSynchronizedBuildFileExceptionSet"
+      end).to be false
+    end
+
     it "unlinks a folder from one target without deleting it for the others" do
       base_project.new_target("com.apple.product-type.library.static", "bar", :ios)
       group = add_synchronized_root_group(base_project, "Shared")

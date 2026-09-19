@@ -83,6 +83,7 @@ module Kintsugi
 
     def apply_main_group_change(project, main_group_change)
       additions, removals, diffs = classify_group_and_file_changes(main_group_change, "")
+      apply_isa_conversions(project, diffs)
       apply_group_additions(project, additions)
       apply_file_changes(project, additions, removals)
       apply_group_and_file_diffs(project, diffs)
@@ -120,6 +121,11 @@ module Kintsugi
     def apply_group_additions(project, additions, force_create_containing_group: false)
       additions.each do |change, path|
         next unless GROUP_PIPELINE_ISAS.include?(change["isa"])
+
+        # If the destination path is at or under a buildable folder in this project (e.g. this side
+        # converted the group while the other side added a subgroup or nested file under it), the
+        # folder includes its descendants implicitly -- there is no explicit child object to add.
+        next if path_within_synchronized_root_group?(project, path)
 
         group_type = Module.const_get("Xcodeproj::Project::#{change["isa"]}")
         containing_group = project.group_or_file_at_path(path)
@@ -167,15 +173,28 @@ module Kintsugi
                                .to_multi_h
       removal_keys_to_references = file_removals.to_multi_h.map do |change, paths|
         references = paths.map do |containing_path|
-          project[join_path(containing_path, change["displayName"])]
+          # Buildable-folder-safe lookup: a removed file whose containing path is now inside a
+          # folder converted from a group in the same change resolves to nil rather than raising.
+          project.group_or_file_at_path(join_path(containing_path, change["displayName"]))
         end
 
         [file_reference_key(change), references]
       end.to_h
 
       file_additions.each do |change, path|
-        containing_group = project.group_or_file_at_path(path)
         change_key = file_reference_key(change)
+
+        # If the destination path is at or under a buildable folder in this project (e.g. this side
+        # converted the group while the other side added a file into it), the folder includes the
+        # file implicitly -- there is no explicit reference to add. Drop any moved source reference
+        # so it is not left behind, then skip; otherwise `apply_file_addition` would call `children`
+        # on the folder and raise.
+        if path_within_synchronized_root_group?(project, path)
+          (removal_keys_to_references[change_key] || []).compact.each(&:remove_from_project)
+          next
+        end
+
+        containing_group = project.group_or_file_at_path(path)
 
         if containing_group.nil?
           if !force_create_containing_group &&
@@ -205,7 +224,7 @@ module Kintsugi
       file_removals.each do |change, path|
         next unless addition_keys_to_paths[file_reference_key(change)].nil?
 
-        file_reference = project[join_path(path, change["displayName"])]
+        file_reference = project.group_or_file_at_path(join_path(path, change["displayName"]))
         remove_component(file_reference, change)
       end
     end
@@ -227,6 +246,10 @@ module Kintsugi
 
     def apply_group_and_file_diffs(project, diffs)
       diffs.each do |change, path|
+        # A folder->group conversion is handled up front by `apply_isa_conversions` (before files
+        # are added), so the recreated group already exists here with nothing left to apply for it.
+        next if converts_from_synchronized_root_group?(change)
+
         component = project.group_or_file_at_path(path)
 
         if component.nil? && change&.keys != ["children"]
@@ -239,12 +262,155 @@ module Kintsugi
           component = create_nonexistent_groupable_component(project, path)
         end
 
+        # A group->buildable-folder conversion replaces the node's type in place. It is handled
+        # here, after `apply_file_changes` has removed the group's explicit children, so that those
+        # file removals could still navigate the group. The old group is removed and a folder
+        # recreated at the same path. If this project already holds the folder (both sides converted
+        # the same group), there is nothing to tear down; the conflict check surfaces any diverging
+        # folder attributes rather than silently dropping them.
+        if converts_to_synchronized_root_group?(change)
+          if component.is_a?(Xcodeproj::Project::PBXFileSystemSynchronizedRootGroup)
+            raise_on_diverging_both_sides_conversion(component, path)
+          elsif !component.nil?
+            remove_groupable_component_for_conversion(component)
+            create_nonexistent_groupable_component(project, path)
+          end
+          next
+        end
+
         change.each do |subchange_name, subchange|
           next if subchange_name == "children"
 
           apply_change_to_component(component, subchange_name, subchange, path)
         end
       end
+    end
+
+    # Xcode 16 can convert a plain group (`PBXGroup`) into a buildable folder
+    # (`PBXFileSystemSynchronizedRootGroup`) or back. The two are unrelated classes, so the change
+    # is expressed as an in-place `isa` change on a node that keeps its name and location, which
+    # can't be applied as an ordinary attribute; the old node is removed and a new one of the
+    # target type is created at the same path.
+    #
+    # Only the folder->group direction is handled here, before files are added or removed, so that
+    # the conversion's restored child files land in the newly created group -- a buildable folder
+    # has no navigable `children`, so adding them to the not-yet-converted node would raise. The
+    # group->folder direction is handled later, in `apply_group_and_file_diffs`, because the group
+    # must stay navigable until `apply_file_changes` has removed its explicit children.
+    def apply_isa_conversions(project, diffs)
+      diffs.each do |change, path|
+        next unless converts_from_synchronized_root_group?(change)
+
+        component = project.group_or_file_at_path(path)
+
+        if component.is_a?(Xcodeproj::Project::PBXFileSystemSynchronizedRootGroup)
+          # This project still holds the buildable folder: convert it to the plain group. The normal
+          # additions/file-changes path then merges the other side's restored children in.
+          remove_groupable_component_for_conversion(component)
+          create_nonexistent_groupable_component(project, path)
+        elsif !component.nil?
+          # This project already holds a plain group here -- both sides ran the same folder->group
+          # conversion. There is nothing to tear down (ours-only children still merge via the normal
+          # path), but surface any diverging attributes rather than silently dropping them.
+          raise_on_diverging_both_sides_conversion(component, path)
+        end
+      end
+    end
+
+    # When both sides of a merge independently convert the same node to the same type (group or
+    # buildable folder), `change` for that node conflates the structural attributes both sides
+    # applied identically with any attribute the other side additionally changed -- so the latter
+    # can't be cleanly merged onto the node this project already holds. Rather than silently drop
+    # such a change, compare the two converted nodes' own attributes (children merge separately, so
+    # they are ignored) and raise a conflict when they diverge, leaving it for the user to resolve.
+    def raise_on_diverging_both_sides_conversion(component, path)
+      source_component = @change_source_project.group_or_file_at_path(path)
+      return if source_component.nil?
+      return if own_conversion_attributes(component) == own_conversion_attributes(source_component)
+
+      raise MergeError, "Both sides converted the node at '#{path}' to the same type but with " \
+                        "different attributes, which cannot be merged automatically. Resolve the " \
+                        "conflict for this file manually."
+    end
+
+    def own_conversion_attributes(node)
+      canonicalize(node.to_tree_hash.reject { |key, _| %w[children displayName].include?(key) })
+    end
+
+    # Canonicalizes a tree-hash value so semantically-equal attributes compare equal regardless of
+    # hash key order or the order of set-like arrays. A buildable folder's `exceptions` and
+    # `explicitFolders` are order-independent sets, so a pure reordering must not read as a
+    # divergence: hashes become key-sorted pair lists and arrays are sorted by their canonical form.
+    def canonicalize(value)
+      case value
+      when Hash
+        value.sort_by { |key, _| key.to_s }.map { |key, subvalue| [key, canonicalize(subvalue)] }
+      when Array
+        value.map { |element| canonicalize(element) }.sort_by(&:inspect)
+      else
+        value
+      end
+    end
+
+    # Whether `change` is an in-place `isa` change whose new type is a buildable folder, i.e. a
+    # group->folder conversion. Restricting to this exact case (rather than any `isa` change) keeps
+    # the remove-and-recreate path away from unrelated in-place `isa` changes (e.g. a
+    # `PBXVariantGroup` to `PBXGroup`), whose unchanged children must be preserved rather than
+    # dropped.
+    def converts_to_synchronized_root_group?(change)
+      isa_conversion_added_type(change) == "PBXFileSystemSynchronizedRootGroup"
+    end
+
+    # Whether `change` is an in-place `isa` change whose old type was a buildable folder, i.e. a
+    # folder->group conversion.
+    def converts_from_synchronized_root_group?(change)
+      isa_conversion_removed_type(change) == "PBXFileSystemSynchronizedRootGroup"
+    end
+
+    def isa_conversion_added_type(change)
+      isa_change = change.is_a?(Hash) ? change["isa"] : nil
+      isa_change.is_a?(Hash) ? isa_change[:added] || isa_change["added"] : nil
+    end
+
+    def isa_conversion_removed_type(change)
+      isa_change = change.is_a?(Hash) ? change["isa"] : nil
+      isa_change.is_a?(Hash) ? isa_change[:removed] || isa_change["removed"] : nil
+    end
+
+    # Whether `path` (a "/"-separated path from the main group) lies at or under a buildable folder
+    # (`PBXFileSystemSynchronizedRootGroup`) in `project`. A buildable folder includes its
+    # descendants implicitly, so an explicit group/file addition at such a path must be skipped
+    # rather than navigated into (a folder has no `children`). Walks the path shallowest-first,
+    # returning at the first folder (match) or the first segment that does not resolve (no folder
+    # sits above the change -- the path is genuinely absent and handled normally).
+    def path_within_synchronized_root_group?(project, path)
+      return false if path.nil? || path.empty?
+
+      segments = path.split("/")
+      (1..segments.length).each do |depth|
+        node = project.group_or_file_at_path(segments.first(depth).join("/"))
+        return true if node.is_a?(Xcodeproj::Project::PBXFileSystemSynchronizedRootGroup)
+        return false if node.nil?
+      end
+      false
+    end
+
+    # Removes a node that is being converted to or from a buildable folder. The subtree is torn down
+    # bottom-up: each file reference's build files are removed first (so none are left dangling once
+    # the file references go away), then every descendant object is detached (so none are left
+    # orphaned once the node is replaced), then the node itself. A buildable folder includes its
+    # files implicitly, so their explicit references and build-phase membership are no longer
+    # represented.
+    def remove_groupable_component_for_conversion(component)
+      if component.respond_to?(:recursive_children)
+        component.recursive_children.reverse_each do |child|
+          if child.is_a?(Xcodeproj::Project::PBXFileReference)
+            remove_build_files_of_file_reference(child)
+          end
+          child.remove_from_project
+        end
+      end
+      component.remove_from_project
     end
 
     def create_nonexistent_groupable_component(project, path)
@@ -280,7 +446,10 @@ module Kintsugi
         change_without_children = change.dup
         change_without_children["children"] = [] if change.key?("children")
 
-        remove_component(project[group_path], change_without_children)
+        # Use the buildable-folder-safe lookup: a group nested under a folder that was converted to
+        # a buildable folder in the same change no longer exists as a navigable object (it was
+        # removed with its parent), so this resolves to nil and the removal becomes a no-op.
+        remove_component(project.group_or_file_at_path(group_path), change_without_children)
       end
     end
 

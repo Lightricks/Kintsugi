@@ -13,7 +13,16 @@ module Xcodeproj
     #
     # @return [PBXGroup/PBXVariantGroup/PBXFileReference]
     def group_or_file_at_path(path)
-      path.empty? ? self.main_group : self[path]
+      return self.main_group if path.empty?
+
+      # A path segment may traverse a `PBXFileSystemSynchronizedRootGroup` (Xcode 16 buildable
+      # folder), whose contents are implicit and not navigable objects. `find_subpath` raises a
+      # `NoMethodError` in that case; there is no explicit object at such a path, so return `nil`.
+      begin
+        self[path]
+      rescue NoMethodError
+        nil
+      end
     end
 
     # Extends `ObjectDictionary` to act like an `Object` if `self` repreresents a project reference.
